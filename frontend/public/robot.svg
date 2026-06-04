@@ -1,0 +1,56 @@
+<svg width="640" height="640" viewBox="0 0 640 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 320) rotate(90) scale(320)">
+      <stop stop-color="#D8ECFF"/>
+      <stop offset="1" stop-color="#8FB8F6"/>
+    </radialGradient>
+    <linearGradient id="shell" x1="195" y1="94" x2="446" y2="546" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FBFF"/>
+      <stop offset="1" stop-color="#A9C5EA"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="254" y1="140" x2="385" y2="487" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1C2A43"/>
+      <stop offset="1" stop-color="#0D162A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(320 305) rotate(90) scale(210)">
+      <stop stop-color="#5EDBFF" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#5EDBFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="0" y="0" width="640" height="640" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+  </defs>
+
+  <circle cx="320" cy="320" r="250" fill="url(#bg)" opacity="0.65"/>
+  <circle cx="320" cy="320" r="250" fill="url(#glow)"/>
+
+  <rect x="220" y="180" width="200" height="170" rx="64" fill="url(#shell)" stroke="#8DB3E2" stroke-width="5"/>
+  <rect x="250" y="202" width="140" height="106" rx="36" fill="url(#steel)"/>
+
+  <circle cx="292" cy="254" r="16" fill="#5AD4FF"/>
+  <circle cx="348" cy="254" r="16" fill="#5AD4FF"/>
+  <path d="M285 286C294 302 305 309 320 309C335 309 346 302 355 286" stroke="#7DE0FF" stroke-width="8" stroke-linecap="round"/>
+
+  <rect x="196" y="221" width="30" height="80" rx="15" fill="url(#shell)" stroke="#8DB3E2" stroke-width="4"/>
+  <rect x="414" y="221" width="30" height="80" rx="15" fill="url(#shell)" stroke="#8DB3E2" stroke-width="4"/>
+
+  <circle cx="210" cy="260" r="22" fill="url(#steel)" stroke="#70D8FF" stroke-width="4"/>
+  <circle cx="430" cy="260" r="22" fill="url(#steel)" stroke="#70D8FF" stroke-width="4"/>
+
+  <path d="M278 350H362L392 476C396 494 383 510 364 510H276C257 510 244 494 248 476L278 350Z" fill="url(#shell)" stroke="#8DB3E2" stroke-width="5"/>
+  <rect x="289" y="383" width="62" height="74" rx="22" fill="#2A3D63"/>
+  <circle cx="320" cy="432" r="18" fill="#6DE1FF"/>
+
+  <path d="M247 378L206 424C195 436 196 454 208 466L223 481" stroke="url(#shell)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M393 378L434 424C445 436 444 454 432 466L417 481" stroke="url(#shell)" stroke-width="24" stroke-linecap="round"/>
+
+  <circle cx="222" cy="483" r="18" fill="#E9F4FF" stroke="#8DB3E2" stroke-width="4"/>
+  <circle cx="418" cy="483" r="18" fill="#E9F4FF" stroke="#8DB3E2" stroke-width="4"/>
+
+  <rect x="305" y="127" width="30" height="46" rx="15" fill="url(#shell)" stroke="#8DB3E2" stroke-width="4"/>
+  <circle cx="320" cy="118" r="14" fill="#6FE3FF"/>
+
+  <g filter="url(#blur)" opacity="0.5">
+    <circle cx="320" cy="539" r="70" fill="#2F5EA5"/>
+  </g>
+</svg>

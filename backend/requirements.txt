@@ -1,0 +1,17 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+python-docx==1.1.2
+pypdf==5.0.1
+reportlab==4.2.5
+python-multipart==0.0.12
+scikit-learn>=1.5,<2.0
+openai>=1.0.0,<2.0.0
+openpyxl>=3.1.5,<4.0.0
+python-dotenv==1.0.1
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+passlib[bcrypt]>=1.7.4
+pyjwt>=2.8.0
+python-jose[cryptography]>=3.3.0
+pydantic[email]>=2.0.0

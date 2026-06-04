@@ -1,0 +1,111 @@
+# ============================================================
+# Environment & Secrets — NEVER commit these
+# ============================================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# Keep the example files (they have no real secrets)
+!.env.example
+!.env.example.local
+
+# ============================================================
+# Python / Backend
+# ============================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# pytest / test cache
+.pytest_cache/
+.cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# mypy / type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Scratch / temp scripts
+backend/scratch/
+
+# SQLite databases (runtime data — not source)
+*.db
+*.sqlite
+*.sqlite3
+
+# Trained ML model artifacts (large binary files)
+backend/training/*.pkl
+backend/training/*.model
+
+# ============================================================
+# Node / Frontend
+# ============================================================
+node_modules/
+frontend/node_modules/
+
+# Next.js build output
+frontend/.next/
+.next/
+
+# Next.js log files
+*.out.log
+*.err.log
+frontend/*.out.log
+frontend/*.err.log
+
+# Production build
+frontend/out/
+frontend/build/
+
+# Dependency lock files (optional — keep package-lock.json if desired)
+# package-lock.json
+
+# ============================================================
+# Generated output files
+# ============================================================
+backend/generated/
+output.txt
+output_utf8.txt
+
+# ============================================================
+# OS & Editor artefacts
+# ============================================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================================================
+# Misc
+# ============================================================
+*.log
+*.tmp
+*.bak

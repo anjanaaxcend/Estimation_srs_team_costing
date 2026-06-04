@@ -1,0 +1,13 @@
+{
+  "name": "ai-srs-planner-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev:frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload --app-dir backend",
+    "install-frontend": "npm install --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix frontend"
+  }
+}
