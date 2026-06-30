@@ -2160,10 +2160,6 @@ export function TeamDesignExperience() {
                         </div>
                       )}
 
-                      <div className="bg-parcelles-sage/10 border border-parcelles-dark/20 p-3 font-body text-xs leading-relaxed text-parcelles-dark/80">
-                        <strong>Seniority & Allocation Logic:</strong> The AI allocates resources from this roster. It assigns <strong>Lead/Senior</strong> members (6+ Yrs Exp) to High complexity modules, <strong>Mid-level</strong> members (3-5 Yrs Exp) to Medium modules, and <strong>Junior</strong> members (1-2 Yrs Exp) to Low complexity modules.
-                      </div>
-
                       <div className="border border-parcelles-dark divide-y divide-parcelles-dark/20">
                         <div className="grid grid-cols-12 gap-3 items-center bg-parcelles-sage/20 p-2.5 font-display uppercase tracking-wider text-[10px]">
                           <div className="col-span-3">Name</div>
