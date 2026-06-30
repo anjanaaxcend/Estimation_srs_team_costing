@@ -1266,17 +1266,15 @@ export function TeamDesignExperience() {
   });
 
   const handleAddRosterMember = () => {
-    if (!newMemberName.trim()) return;
     const nextRoster = [
       ...companyRoster,
       {
-        name: newMemberName.trim(),
+        name: newMemberRole,
         role: newMemberRole,
         experience_years: Number(newMemberExp) || 0
       }
     ];
     setAndSyncRoster(nextRoster);
-    setNewMemberName("");
     setNewMemberExp(5);
   };
 
@@ -2163,9 +2161,8 @@ export function TeamDesignExperience() {
 
                       <div className="border border-parcelles-dark divide-y divide-parcelles-dark/20">
                         <div className="grid grid-cols-12 gap-3 items-center bg-parcelles-sage/20 p-2.5 font-display uppercase tracking-wider text-[10px]">
-                          <div className="col-span-3">Name</div>
-                          <div className="col-span-3">Designated Role</div>
-                          <div className="col-span-2">Experience (Yrs)</div>
+                          <div className="col-span-5">Designated Role</div>
+                          <div className="col-span-3">Experience (Yrs)</div>
                           <div className="col-span-3">Hourly Pay</div>
                           <div className="col-span-1 text-right">Action</div>
                         </div>
@@ -2173,8 +2170,7 @@ export function TeamDesignExperience() {
                         <div className="divide-y divide-parcelles-dark/10 max-h-[200px] overflow-y-auto">
                           {companyRoster.map((member, index) => (
                             <div key={index} className="grid grid-cols-12 gap-3 items-center p-2 font-body text-xs hover:bg-parcelles-sage/5 transition-colors">
-                              <div className="col-span-3 font-medium text-parcelles-dark">{member.name}</div>
-                              <div className="col-span-3 text-parcelles-dark/70">{member.role}</div>
+                              <div className="col-span-5 text-parcelles-dark font-medium">{member.role}</div>
                               <div className="col-span-2 flex items-center gap-2">
                                 <input
                                   type="number"
@@ -2222,16 +2218,7 @@ export function TeamDesignExperience() {
 
                         {/* Add new member form row */}
                         <div className="grid grid-cols-12 gap-3 items-center p-2 bg-parcelles-sage/10 font-body text-xs">
-                          <div className="col-span-3">
-                            <input
-                              type="text"
-                              placeholder="Resource Name"
-                              value={newMemberName}
-                              onChange={(e) => setNewMemberName(e.target.value)}
-                              className="w-full border border-parcelles-dark/30 px-2 py-1 bg-transparent focus:border-parcelles-dark outline-none transition-colors"
-                            />
-                          </div>
-                          <div className="col-span-3">
+                          <div className="col-span-5">
                             <select
                               value={newMemberRole}
                               onChange={(e) => setNewMemberRole(e.target.value)}
@@ -2259,12 +2246,11 @@ export function TeamDesignExperience() {
                             <span>{calculateHourlyPay(newMemberExp)}</span>
                             <span className="text-[10px] opacity-60">/hr</span>
                           </div>
-                          <div className="col-span-1 text-right">
+                          <div className="col-span-2 text-right">
                             <button
                               type="button"
                               onClick={handleAddRosterMember}
-                              disabled={!newMemberName.trim()}
-                              className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg px-2 py-0.5 hover:opacity-90 disabled:opacity-30 transition-opacity font-display text-[10px] uppercase"
+                              className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg px-2 py-0.5 hover:opacity-90 transition-opacity font-display text-[10px] uppercase w-full"
                             >
                               Add
                             </button>
@@ -2507,11 +2493,11 @@ export function TeamDesignExperience() {
                                                       {companyRoster.length > 0 ? (
                                                         companyRoster.map((member) => (
                                                           <option key={member.name} value={member.name}>
-                                                            {member.name} ({member.role})
+                                                            {member.role}
                                                           </option>
                                                         ))
                                                       ) : (
-                                                        ["S1", "S2", "S3"].map((lvl) => (
+                                                        ["S1 Developer", "S2 Developer", "S3 Developer"].map((lvl) => (
                                                           <option key={lvl} value={lvl}>{lvl}</option>
                                                         ))
                                                       )}
