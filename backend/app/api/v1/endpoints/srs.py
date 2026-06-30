@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, H
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_optional_user
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.user import User, UserHistory, TemporarySRS, ApprovedSRS, UploadedDocument
 from app.schemas.client import ClientInput
@@ -304,7 +304,7 @@ def find_existing_matching_srs(
 def generate_srs(
     payload: SRSGenerationRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> SRSGenerationResult:
     provider = (payload.selected_model.provider if payload.selected_model else "openai") or "openai"
@@ -358,7 +358,7 @@ def generate_srs(
 def generate_srs_from_text(
     payload: SRSTextGenerationRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> SRSGenerationResult:
     provider = (payload.selected_model.provider if payload.selected_model else "openai") or "openai"
@@ -427,7 +427,7 @@ async def generate_srs_from_file(
     selected_base_url: str | None = Form(None),
     selected_api_key: str | None = Form(None),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> SRSGenerationResult:
     try:
@@ -496,7 +496,7 @@ async def generate_srs_from_file(
 def regenerate_srs(
     payload: RegenerateRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> SRSGenerationResult:
     """Re-run extraction with user feedback to produce a progressively improved version."""
@@ -580,7 +580,7 @@ def regenerate_srs(
 def save_feedback(
     payload: SaveFeedbackRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Save user-approved extractions to training data file."""
     _save_to_training(payload.raw_input, payload.extracted, payload.user_feedback)
@@ -698,7 +698,7 @@ class SaveTempDraftRequest(BaseModel):
 @router.get("/temp-draft")
 def get_temp_draft(
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     if not current_user and not x_session_id:
@@ -727,7 +727,7 @@ def get_temp_draft(
 def post_temp_draft(
     payload: SaveTempDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     session_id = payload.session_id or x_session_id
@@ -748,7 +748,7 @@ class SaveTeamDraftRequest(BaseModel):
 def save_temp_team_draft(
     payload: SaveTeamDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     query = db.query(TemporarySRS)
@@ -790,7 +790,7 @@ class SaveCostDraftRequest(BaseModel):
 def save_temp_cost_draft(
     payload: SaveCostDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     query = db.query(TemporarySRS)
@@ -832,7 +832,7 @@ class SaveAxcendDraftRequest(BaseModel):
 def save_temp_axcend_draft(
     payload: SaveAxcendDraftRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     query = db.query(TemporarySRS)
@@ -869,7 +869,7 @@ def save_temp_axcend_draft(
 @router.delete("/temp-draft")
 def delete_temp_draft(
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ):
     query = db.query(TemporarySRS)
@@ -889,7 +889,7 @@ def delete_temp_draft(
 @router.get("/approved")
 def get_approved_srs_list(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")

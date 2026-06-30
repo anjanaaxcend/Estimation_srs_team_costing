@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Uploa
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_optional_user
+from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.models.user import User
 from app.services.team_allocation_service import TeamAllocationService
@@ -30,7 +30,7 @@ async def analyze_srs_endpoint(
     company_roster: str | None = Form(None),
     planning_preferences: str | None = Form(None),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> TeamAnalysisResult:
     """Analyze an uploaded SRS file — AI extracts project name from the content."""
@@ -118,7 +118,7 @@ class TextAnalysisRequest(BaseModel):
 async def analyze_text_endpoint(
     body: TextAnalysisRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> TeamAnalysisResult:
     """Analyze a plain-text project description — AI generates the project name and team."""
@@ -165,7 +165,7 @@ async def analyze_text_endpoint(
 async def extract_document_team_endpoint(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> TeamAllocationDocumentResult:
     try:
@@ -223,7 +223,7 @@ class TeamAllocationTextRequest(BaseModel):
 async def extract_text_team_endpoint(
     body: TeamAllocationTextRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> TeamAllocationDocumentResult:
     """Extract a team allocation directly from plain-text brief or copy-pasted roster."""
@@ -294,7 +294,7 @@ class AxcendEstimationRequest(BaseModel):
 @router.post("/build-axcend-estimation", response_model=AxcendEstimationSheet)
 async def build_axcend_estimation_endpoint(
     body: AxcendEstimationRequest,
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ) -> AxcendEstimationSheet:
     """
     Convert a completed TeamAnalysisResult into the AXCEND Effort Estimation

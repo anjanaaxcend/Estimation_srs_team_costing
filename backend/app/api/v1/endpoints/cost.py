@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, Response, UploadFile, Depends, Header
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.api.deps import get_optional_user
+from app.api.deps import get_current_user
 from app.models.user import User, UserHistory
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -50,7 +50,7 @@ def _team_cost(member) -> float:
 async def analyze_cost_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
     x_session_id: str | None = Header(None),
 ) -> TeamAllocationDocumentResult:
     try:
@@ -102,7 +102,7 @@ async def analyze_cost_document(
 async def export_cost_excel(
     payload: CostEstimationExportRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ) -> Response:
     project_name = resolve_project_name(provided_name=payload.project_name, fallback="Project Costing")
 
@@ -286,7 +286,7 @@ async def export_cost_excel(
 async def export_axcend_excel_endpoint(
     payload: AxcendExcelExportRequest,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ) -> Response:
     """
     Generate and return a beautifully styled 3-sheet AXCEND format Excel workbook

@@ -13,7 +13,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from reportlab.lib import colors
 from app.schemas.srs import SRSGenerationResult
 from app.core.database import get_db
-from app.api.deps import get_optional_user
+from app.api.deps import get_current_user
 from app.models.user import User, UserHistory
 from app.schemas.cost import CostEstimationExportRequest
 from app.services.planning_sync import (
@@ -85,7 +85,7 @@ def _write_data_row(ws, row, values, s, alt=False, bold_first=False):
 async def export_excel(
     data: SRSGenerationResult,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ):
     if current_user:
         history = UserHistory(
@@ -226,7 +226,7 @@ async def export_excel(
 async def export_team_excel(
     data: dict,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ):
     if current_user:
         history = UserHistory(
@@ -295,7 +295,7 @@ def _team_members(data: dict) -> list[dict]:
 async def export_team_docx(
     data: dict,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ):
     project_name = _team_project_name(data)
     if current_user:
@@ -342,7 +342,7 @@ async def export_team_docx(
 async def export_team_pdf(
     data: dict,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ):
     project_name = _team_project_name(data)
     if current_user:
@@ -405,7 +405,7 @@ async def export_bundle(
     team: dict = Body(...),
     cost: CostEstimationExportRequest = Body(...),
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_user)
+    current_user: User = Depends(get_current_user)
 ):
     """Consolidated 4-Sheet Professional Excel Workbook."""
     if current_user:
