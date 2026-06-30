@@ -2550,6 +2550,41 @@ export function TeamDesignExperience() {
                               ) : null}
                             </div>
                           )}
+                          {/* Development, Testing, and Deployment breakdown box */}
+                          {(() => {
+                            const devHoursOnly = resolvedFeatureAllocations
+                              .filter(f => !f.isTesting && !f.isDeployment)
+                              .reduce((sum, f) => sum + (f.hours || 0), 0);
+
+                            const testingHoursOnly = resolvedFeatureAllocations
+                              .filter(f => f.isTesting === true)
+                              .reduce((sum, f) => sum + (f.hours || 0), 0);
+
+                            const deploymentHoursOnly = resolvedFeatureAllocations
+                              .filter(f => f.isDeployment === true)
+                              .reduce((sum, f) => sum + (f.hours || 0), 0);
+
+                            return (
+                              <div className="grid grid-cols-3 gap-4 p-3.5 border border-parcelles-dark/10 bg-parcelles-sage/5 rounded mb-3 font-body text-xs text-parcelles-dark">
+                                <div className="text-center border-r border-parcelles-dark/10">
+                                  <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Development</span>
+                                  <span className="font-mono text-sm font-bold block">{devHoursOnly} hrs</span>
+                                  <span className="font-mono text-[10px] text-parcelles-dark/60 block">{(devHoursOnly / 8).toFixed(1).replace(/\.0$/, '')} days</span>
+                                </div>
+                                <div className="text-center border-r border-parcelles-dark/10">
+                                  <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Testing</span>
+                                  <span className="font-mono text-sm font-bold block">{testingHoursOnly} hrs</span>
+                                  <span className="font-mono text-[10px] text-parcelles-dark/60 block">{(testingHoursOnly / 8).toFixed(1).replace(/\.0$/, '')} days</span>
+                                </div>
+                                <div className="text-center">
+                                  <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Deployment</span>
+                                  <span className="font-mono text-sm font-bold block">{deploymentHoursOnly} hrs</span>
+                                  <span className="font-mono text-[10px] text-parcelles-dark/60 block">{(deploymentHoursOnly / 8).toFixed(1).replace(/\.0$/, '')} days</span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           <div className="flex items-center justify-between pt-2 border-t border-parcelles-dark/10">
                             <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Engineering Effort:</span>
                             <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(engineeringTotal)} hrs / {(engineeringTotal / 8).toFixed(1).replace(/\.0$/, '')} days</span>
