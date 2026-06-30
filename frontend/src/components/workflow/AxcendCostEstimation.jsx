@@ -331,7 +331,8 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
 
       approvedTeam.members.forEach((m) => {
         const roleLower = (m.role || "").toLowerCase();
-        const hrs = Number(m.hours_per_member) || 0;
+        const count = Number(m.count) || 1;
+        const hrs = (Number(m.hours_per_member) || 0) * count;
         const level = classifyMemberLevel(roleLower);
         if (level === "pre_eng") {
           preEngSum += hrs;
