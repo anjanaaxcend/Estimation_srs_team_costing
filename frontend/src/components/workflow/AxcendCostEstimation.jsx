@@ -208,6 +208,10 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
   const [riskPct, setRiskPct]       = useState(25);
   const [negoPct, setNegoPct]       = useState(0);
 
+  const [s3Count, setS3Count] = useState(1);
+  const [s2Count, setS2Count] = useState(1);
+  const [s1Count, setS1Count] = useState(1);
+
   const [showSettings, setShowSettings] = useState(false);
   const [loaded, setLoaded]         = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -329,6 +333,10 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       let s2Sum = 0;
       let s3Sum = 0;
 
+      let s3InitCount = 1;
+      let s2InitCount = 1;
+      let s1InitCount = 1;
+
       approvedTeam.members.forEach((m) => {
         const roleLower = (m.role || "").toLowerCase();
         const count = Number(m.count) || 1;
@@ -338,10 +346,13 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
           preEngSum += hrs;
         } else if (level === "S1") {
           s1Sum += hrs;
+          s1InitCount = count;
         } else if (level === "S2") {
           s2Sum += hrs;
+          s2InitCount = count;
         } else if (level === "S3") {
           s3Sum += hrs;
+          s3InitCount = count;
         }
         // "pm" level is intentionally excluded from dev/eng hours
       });
@@ -350,6 +361,9 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       setS1Hours(s1Sum);
       setS2Hours(s2Sum);
       setS3DevHours(s3Sum);
+      setS3Count(s3InitCount);
+      setS2Count(s2InitCount);
+      setS1Count(s1InitCount);
       setS1Rate(rateS1);
       setS2Rate(rateS2);
       setS3Rate(rateS3);
@@ -366,26 +380,28 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
 
     const devHours = Math.round(preEngHoursVal + s1HoursVal + s2HoursVal + s3DevHoursVal);
     const pmHours = Math.round(devHours * (pmPct / 100));
-    
-    // S3 total hours (excluding PM for dev list, PM shown separately)
-    const s3TotalHours = Math.round(preEngHoursVal + s3DevHoursVal);
-    const s2TotalHours = s2HoursVal;
-    const s1TotalHours = s1HoursVal;
 
-    const preEngDays = preEngHoursVal / 8;
-    const preEngCost = Math.round(preEngDays * s3Rate);
+    // Testing and deployment hours (constant overheads)
+    const deploymentHours = Math.min(s3DevHoursVal, 72); // 72 hrs is deployment
+    const pureS3Dev = s3DevHoursVal - deploymentHours;
 
-    const s3DevDays = s3DevHoursVal / 8;
-    const s3DevCost = Math.round(s3DevDays * s3Rate);
+    const testingHours = Math.min(s2HoursVal, 216); // 216 hrs is testing
+    const pureS2Dev = s2HoursVal - testingHours;
 
-    const s2ManDays = s2TotalHours / 8;
-    const s2Cost = Math.round(s2ManDays * s2Rate);
+    // Displayed hours per developer (reduced by dev count!)
+    const s3HoursPerDev = Math.round((pureS3Dev / s3Count) + preEngHoursVal + deploymentHours);
+    const s2HoursPerDev = Math.round((pureS2Dev / s2Count) + testingHours);
+    const s1HoursPerDev = Math.round(s1HoursVal / s1Count);
 
-    const s1ManDays = s1TotalHours / 8;
-    const s1Cost = Math.round(s1ManDays * s1Rate);
+    const s3ManDays = s3HoursPerDev / 8;
+    const s2ManDays = s2HoursPerDev / 8;
+    const s1ManDays = s1HoursPerDev / 8;
 
-    const s3ManDays = preEngDays + s3DevDays;
-    const s3Cost = preEngCost + s3DevCost;
+    // Cost calculations (Total Dev Cost = Count * Man Days * Rate)
+    // Since days is divided by count, and cost multiplies by count, the cost remains constant ("uncreases")!
+    const s3Cost = Math.round(s3Count * s3ManDays * s3Rate);
+    const s2Cost = Math.round(s2Count * s2ManDays * s2Rate);
+    const s1Cost = Math.round(s1Count * s1ManDays * s1Rate);
 
     const devSubtotal = Math.round(s3Cost + s2Cost + s1Cost);
     const pmManDays = pmHours / 8;
@@ -393,14 +409,14 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
     const totalCost = Math.round(devSubtotal + pmCost);
 
     const totalAllHours = Math.round(devHours + pmHours);
-    const totalAllDays = s3ManDays + s2ManDays + s1ManDays + pmManDays;
+    const totalAllDays = (s3Count * s3ManDays) + (s2Count * s2ManDays) + (s1Count * s1ManDays) + pmManDays;
     const manDaysTotal = totalAllDays;
     const manMonths = Math.round(manDaysTotal / 20);
     const manWeeks = Math.round(manDaysTotal / 5);
     const inDays = s3ManDays + s2ManDays + s1ManDays;
 
-    const engDays = s3DevDays + s2ManDays + s1ManDays;
-    const engCost = s3DevCost + s2Cost + s1Cost;
+    const engDays = s3ManDays + s2ManDays + s1ManDays;
+    const engCost = s3Cost + s2Cost + s1Cost;
 
     const financeCost = Math.round(totalCost * (financePct / 100));
     const forexCost = Math.round(totalCost * (forexPct / 100));
@@ -413,9 +429,9 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
     return {
       devHours,
       pmHours,
-      s3TotalHours,
-      s2TotalHours,
-      s1TotalHours,
+      s3TotalHours: s3HoursPerDev,
+      s2TotalHours: s2HoursPerDev,
+      s1TotalHours: s1HoursPerDev,
       s3ManDays,
       s2ManDays,
       s1ManDays,
@@ -432,8 +448,6 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       manMonths,
       manWeeks,
       inDays,
-      preEngDays,
-      preEngCost,
       engDays,
       engCost,
       financeCost,
@@ -444,7 +458,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       finalQuote,
       ratePerHr,
     };
-  }, [preEngHours, s1Hours, s2Hours, s3DevHours, s3Rate, s2Rate, s1Rate, pmPct, financePct, forexPct, riskPct, negoPct]);
+  }, [preEngHours, s1Hours, s2Hours, s3DevHours, s3Rate, s2Rate, s1Rate, pmPct, financePct, forexPct, riskPct, negoPct, s3Count, s2Count, s1Count]);
 
   const handleExportAxcend = async () => {
     setExporting(true);
@@ -811,10 +825,10 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
         <table className="w-full border-collapse min-w-[600px]">
           <thead>
             <tr className="bg-parcelles-dark/5 border-b border-parcelles-dark/20">
-              {["Developer", "Total Hours", "Man Days", `Rate (${curr}) / Day`, `Total Dev Cost (${curr})`].map((h, i) => (
+              {["Developer", "Count", "Total Hours", "Man Days", `Rate (${curr}) / Day`, `Total Dev Cost (${curr})`].map((h, i) => (
                 <th
                   key={i}
-                  className={`p-2.5 font-display text-[10px] font-bold uppercase tracking-wider text-parcelles-dark/80 border-r border-parcelles-dark/10 last:border-r-0 whitespace-nowrap ${i === 0 ? "text-left" : "text-right"}`}
+                  className={`p-2.5 font-display text-[10px] font-bold uppercase tracking-wider text-parcelles-dark/80 border-r border-parcelles-dark/10 last:border-r-0 whitespace-nowrap ${i === 0 ? "text-left" : i === 1 ? "text-center" : "text-right"}`}
                 >
                   {h}
                 </th>
@@ -827,11 +841,21 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
                 Sr. Automation Engg. (S3) <SLevelBadge level="S3" />
               </td>
+              <td className="p-2.5 border-r border-parcelles-dark/10 last:border-r-0 text-center">
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={s3Count}
+                  onChange={(e) => setS3Count(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-12 text-center border border-parcelles-dark/25 rounded px-1 py-0.5 bg-parcelles-bg text-parcelles-dark font-mono text-xs focus:border-parcelles-dark outline-none"
+                />
+              </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(result.s3TotalHours, 0)}
+                {fmtNum(result.s3TotalHours, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {result.s3ManDays}
+                {fmtNum(result.s3ManDays, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
                 <div className="flex flex-col items-end">
@@ -845,7 +869,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
                 <div className="flex flex-col items-end">
                   <span className="font-bold text-parcelles-dark">{fmtCost(result.s3Cost, curr)}</span>
                   <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
-                    {result.s3ManDays}d × {getCurrencySymbol(curr)}{s3Rate}
+                    {s3Count} dev(s) × {fmtNum(result.s3ManDays, 1)}d × {getCurrencySymbol(curr)}{s3Rate}
                   </span>
                 </div>
               </td>
@@ -856,11 +880,21 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
                 Automation Engg. (S2) <SLevelBadge level="S2" />
               </td>
+              <td className="p-2.5 border-r border-parcelles-dark/10 last:border-r-0 text-center">
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={s2Count}
+                  onChange={(e) => setS2Count(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-12 text-center border border-parcelles-dark/25 rounded px-1 py-0.5 bg-parcelles-bg text-parcelles-dark font-mono text-xs focus:border-parcelles-dark outline-none"
+                />
+              </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(result.s2TotalHours, 0)}
+                {fmtNum(result.s2TotalHours, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {result.s2ManDays}
+                {fmtNum(result.s2ManDays, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
                 <div className="flex flex-col items-end">
@@ -874,7 +908,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
                 <div className="flex flex-col items-end">
                   <span className="font-bold text-parcelles-dark">{fmtCost(result.s2Cost, curr)}</span>
                   <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
-                    {result.s2ManDays}d × {getCurrencySymbol(curr)}{s2Rate}
+                    {s2Count} dev(s) × {fmtNum(result.s2ManDays, 1)}d × {getCurrencySymbol(curr)}{s2Rate}
                   </span>
                 </div>
               </td>
@@ -885,11 +919,21 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
                 Jr. Automation Engg. (S1) <SLevelBadge level="S1" />
               </td>
+              <td className="p-2.5 border-r border-parcelles-dark/10 last:border-r-0 text-center">
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={s1Count}
+                  onChange={(e) => setS1Count(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-12 text-center border border-parcelles-dark/25 rounded px-1 py-0.5 bg-parcelles-bg text-parcelles-dark font-mono text-xs focus:border-parcelles-dark outline-none"
+                />
+              </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(result.s1TotalHours, 0)}
+                {fmtNum(result.s1TotalHours, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {result.s1ManDays}
+                {fmtNum(result.s1ManDays, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
                 <div className="flex flex-col items-end">
@@ -903,7 +947,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
                 <div className="flex flex-col items-end">
                   <span className="font-bold text-parcelles-dark">{fmtCost(result.s1Cost, curr)}</span>
                   <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
-                    {result.s1ManDays}d × {getCurrencySymbol(curr)}{s1Rate}
+                    {s1Count} dev(s) × {fmtNum(result.s1ManDays, 1)}d × {getCurrencySymbol(curr)}{s1Rate}
                   </span>
                 </div>
               </td>
@@ -914,11 +958,14 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left">
                 TOTAL EFFORTS (Excl. PM)
               </td>
-              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {fmtNum(result.devHours, 0)}
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-center font-bold">
+                {s3Count + s2Count + s1Count}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {result.inDays}
+                {fmtNum(result.s3TotalHours + result.s2TotalHours + result.s1TotalHours, 1)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
+                {fmtNum(result.s3ManDays + result.s2ManDays + result.s1ManDays, 1)}
               </td>
               <td className="p-2.5 border-r border-parcelles-dark/10 last:border-r-0"></td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
@@ -931,11 +978,14 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
                 Project Management <span className="text-[10px] text-parcelles-dark/60 font-body">({pmPct}%)</span>
               </td>
+              <td className="p-2.5 border-r border-parcelles-dark/10 last:border-r-0 text-center font-mono text-xs text-parcelles-dark/40">
+                -
+              </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
                 {fmtNum(result.pmHours, 0)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {result.pmManDays}
+                {fmtNum(result.pmManDays, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right text-parcelles-dark/40 font-mono">
                 -
@@ -950,11 +1000,14 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
               <td className="p-3 font-display text-xs text-parcelles-light border-r border-parcelles-light/10 last:border-r-0 text-left">
                 GRAND TOTAL (Incl. PM)
               </td>
+              <td className="p-3 border-r border-parcelles-light/10 last:border-r-0 text-center font-mono text-xs text-parcelles-light/40">
+                -
+              </td>
               <td className="p-3 font-display text-xs text-parcelles-light border-r border-parcelles-light/10 last:border-r-0 text-right">
                 {fmtNum(result.totalAllHours, 0)}
               </td>
               <td className="p-3 font-display text-xs text-parcelles-light border-r border-parcelles-light/10 last:border-r-0 text-right">
-                {fmtNum(result.totalAllDays, 0)}
+                {fmtNum(result.manDaysTotal, 1)}
               </td>
               <td className="p-3 font-display text-xs text-parcelles-light border-r border-parcelles-light/10 last:border-r-0 text-right font-normal">
                 Total Cost
