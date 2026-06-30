@@ -950,11 +950,12 @@ export function TeamDesignExperience() {
         ? f.developer
         : levelCodeToName(f.developer);
       const expYears = memberExpMap[devName] ?? 5;
-      // Testing/deployment hours are percentages of dev total — keep as-is
-      const hours = (f.isDeployment || f.isTesting)
-        ? f.hours
-        : Math.round((f.baseHours ?? f.hours) * experienceEffortMultiplier(expYears));
-      return { ...f, slNo: i + 1, developer: devName, hours };
+      const rawHours = (f.isDeployment || f.isTesting)
+        ? (f.hours || 0)
+        : ((f.baseHours ?? f.hours) * experienceEffortMultiplier(expYears));
+      const hours = Math.round(rawHours / 4) * 4;
+      const baseHoursRounded = Math.round((f.baseHours ?? f.hours) / 4) * 4;
+      return { ...f, slNo: i + 1, developer: devName, hours, baseHours: baseHoursRounded };
     });
   }, [featureAllocations, availableLevels, companyRoster]);
 
@@ -2475,7 +2476,8 @@ export function TeamDesignExperience() {
                                             const isTestingRow = row.isTesting === true;
                                             const devCount = isDeployRow || isTestingRow ? 1 : (row.developerCount || 1);
                                             const elapsedDays = row.hours / (8 * devCount);
-                                            const daysDisplay = elapsedDays.toFixed(2).replace(/\.00$/, '').replace(/(\.[1-9])0$/, '$1') + 'd';
+                                            const roundedDays = Math.max(0.5, Math.round(elapsedDays * 2) / 2);
+                                            const daysDisplay = roundedDays.toFixed(1).replace(/\.0$/, '') + 'd';
 
                                             rows.push(
                                               <tr key={row.id} className={`hover:bg-parcelles-sage/5 transition-colors font-body text-xs text-parcelles-dark ${isDeployRow || isTestingRow ? "bg-parcelles-dark/5" : "bg-parcelles-bg"}`}>

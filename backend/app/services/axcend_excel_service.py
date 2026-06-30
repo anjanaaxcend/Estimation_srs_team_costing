@@ -239,7 +239,7 @@ class AxcendExcelService:
         for row_num, label, hrs_formula, rate in values:
             ws[f"A{row_num}"] = label
             ws[f"B{row_num}"] = hrs_formula
-            ws[f"C{row_num}"] = f"=ROUNDUP(B{row_num}/8, 0)"
+            ws[f"C{row_num}"] = f"=B{row_num}/8"
             ws[f"D{row_num}"] = rate
             ws[f"E{row_num}"] = f"=ROUND(C{row_num}*D{row_num}, 0)"
             for col in range(1, 6):
@@ -255,7 +255,7 @@ class AxcendExcelService:
         pm_factor = req.pm_pct / 100.0
         ws["A12"] = f"Project Management ({int(req.pm_pct)}%)"
         ws["B12"] = f"=ROUND(B11*{pm_factor}, 0)"   # PM hours = total hrs × pm%
-        ws["C12"] = "=ROUNDUP(B12/8, 0)"             # PM man-days
+        ws["C12"] = "=ROUND(B12/8*2, 0)/2"             # PM man-days
         ws["D12"] = int(round(s3_rate))               # rate reference (display only)
         # PM cost = devSubtotal × pm% — matches the tool's: pmCost = Math.round(devSubtotal * (pmPct / 100))
         ws["E12"] = f"=ROUND(E11*{pm_factor}, 0)"
@@ -326,7 +326,7 @@ class AxcendExcelService:
         for row_num, label, hours in summary_rows:
             ws[f"A{row_num}"] = label
             ws[f"B{row_num}"] = hours
-            ws[f"C{row_num}"] = f"=ROUNDUP(B{row_num}/8, 0)"
+            ws[f"C{row_num}"] = f"=B{row_num}/8"
             for col in range(1, 4):
                 _apply(ws.cell(row=row_num, column=col), font=_font(), align=_align("left" if col == 1 else "center"), border=border)
 
