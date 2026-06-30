@@ -457,6 +457,11 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       negoAmount,
       finalQuote,
       ratePerHr,
+      pureS3Dev,
+      pureS2Dev,
+      pureS1Dev,
+      testingHours,
+      deploymentHours,
     };
   }, [preEngHours, s1Hours, s2Hours, s3DevHours, s3Rate, s2Rate, s1Rate, pmPct, financePct, forexPct, riskPct, negoPct, s3Count, s2Count, s1Count]);
 
@@ -1018,6 +1023,118 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
             </tr>
           </tbody>
         </table>
+      </div>
+
+      {/* Premium Breakdown & Allocation Box */}
+      <div className="border border-parcelles-dark bg-parcelles-sage/5 p-5 space-y-4 rounded shadow-sm font-body text-xs text-parcelles-dark my-6">
+        <div className="flex items-center justify-between border-b border-parcelles-dark/15 pb-2">
+          <span className="font-display text-[11px] uppercase tracking-widest text-parcelles-dark/60 font-bold">
+            Effort Denomination & Developer Allocation
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Development Card */}
+          <div className="bg-parcelles-bg border border-parcelles-dark/15 p-4 rounded space-y-3 relative flex flex-col justify-between">
+            <div>
+              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 block mb-1 font-bold">
+                Development
+              </span>
+              <span className="font-mono text-lg font-bold block mb-2 text-emerald-800">
+                {Math.round(result.pureS3Dev + result.pureS2Dev + result.pureS1Dev)} hrs
+              </span>
+              <div className="space-y-1.5 text-[11px] text-parcelles-dark/80">
+                {result.pureS1Dev > 0 && (
+                  <div className="flex justify-between font-mono items-center">
+                    <span>S1 Devs ({s1Count}):</span>
+                    <span className="font-bold">{(result.pureS1Dev / s1Count / 8).toFixed(1).replace(/\.0$/, '')} days/dev</span>
+                  </div>
+                )}
+                {result.pureS2Dev > 0 && (
+                  <div className="flex justify-between font-mono items-center">
+                    <span>S2 Devs ({s2Count}):</span>
+                    <span className="font-bold">{(result.pureS2Dev / s2Count / 8).toFixed(1).replace(/\.0$/, '')} days/dev</span>
+                  </div>
+                )}
+                {result.pureS3Dev > 0 && (
+                  <div className="flex justify-between font-mono items-center">
+                    <span>S3 Devs ({s3Count}):</span>
+                    <span className="font-bold">{(result.pureS3Dev / s3Count / 8).toFixed(1).replace(/\.0$/, '')} days/dev</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Add Developer Control */}
+            <div className="pt-3 border-t border-parcelles-dark/10 mt-2 flex flex-col gap-1.5">
+              <span className="text-[10px] text-parcelles-dark/60 font-semibold uppercase tracking-wider">Add Dev to Development:</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setS1Count(c => c + 1)}
+                  className="flex-1 py-1 bg-parcelles-dark text-parcelles-bg rounded text-[10px] font-display uppercase font-bold hover:opacity-90 active:scale-95 transition-all"
+                >
+                  + S1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setS2Count(c => c + 1)}
+                  className="flex-1 py-1 bg-parcelles-dark text-parcelles-bg rounded text-[10px] font-display uppercase font-bold hover:opacity-90 active:scale-95 transition-all"
+                >
+                  + S2
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setS3Count(c => c + 1)}
+                  className="flex-1 py-1 bg-parcelles-dark text-parcelles-bg rounded text-[10px] font-display uppercase font-bold hover:opacity-90 active:scale-95 transition-all"
+                >
+                  + S3
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Testing Card */}
+          <div className="bg-parcelles-bg border border-parcelles-dark/15 p-4 rounded space-y-3 flex flex-col justify-between">
+            <div>
+              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 block mb-1 font-bold">
+                Testing
+              </span>
+              <span className="font-mono text-lg font-bold block mb-2 text-blue-800">
+                {result.testingHours} hrs
+              </span>
+              <div className="space-y-1.5 text-[11px] text-parcelles-dark/80">
+                <div className="flex justify-between font-mono items-center">
+                  <span>S2 Testers ({s2Count}):</span>
+                  <span className="font-bold">{(result.testingHours / s2Count / 8).toFixed(1).replace(/\.0$/, '')} days/dev</span>
+                </div>
+              </div>
+            </div>
+            <div className="pt-3 border-t border-parcelles-dark/10 mt-2 text-[10px] text-parcelles-dark/50 leading-normal">
+              Testing is allocated to S2 (Mid-level) developers from the roster.
+            </div>
+          </div>
+
+          {/* Deployment Card */}
+          <div className="bg-parcelles-bg border border-parcelles-dark/15 p-4 rounded space-y-3 flex flex-col justify-between">
+            <div>
+              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 block mb-1 font-bold">
+                Deployment
+              </span>
+              <span className="font-mono text-lg font-bold block mb-2 text-purple-800">
+                {result.deploymentHours} hrs
+              </span>
+              <div className="space-y-1.5 text-[11px] text-parcelles-dark/80">
+                <div className="flex justify-between font-mono items-center">
+                  <span>S3 Deployers ({s3Count}):</span>
+                  <span className="font-bold">{(result.deploymentHours / s3Count / 8).toFixed(1).replace(/\.0$/, '')} days/dev</span>
+                </div>
+              </div>
+            </div>
+            <div className="pt-3 border-t border-parcelles-dark/10 mt-2 text-[10px] text-parcelles-dark/50 leading-normal">
+              Deployment is allocated to S3 (Lead/Senior) developers from the roster.
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* ── SECTION B: MODULE-WISE COST BREAKDOWN ────────────────────────────── */}
