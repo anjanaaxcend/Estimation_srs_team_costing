@@ -102,7 +102,34 @@ export default function HistoryPage() {
               Saved SRS Blueprints
             </h2>
             {isLoadingBlueprints ? (
-              <p className="text-sm italic" style={{ fontFamily: "var(--font-sans)" }}>Loading blueprints...</p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                  gap: "1.5rem",
+                }}
+              >
+                {[1, 2, 3].map((n) => (
+                  <div
+                    key={n}
+                    className="p-6 border border-black/5 chamfer-bottom-right animate-pulse"
+                    style={{
+                      height: "200px",
+                      background: "rgba(10, 28, 22, 0.02)",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <div>
+                      <div style={{ width: "60%", height: "1.2rem", background: "rgba(10, 28, 22, 0.1)", marginBottom: "0.5rem" }} />
+                      <div style={{ width: "40%", height: "0.8rem", background: "rgba(10, 28, 22, 0.05)", marginBottom: "1.5rem" }} />
+                      <div style={{ width: "90%", height: "2.5rem", background: "rgba(10, 28, 22, 0.05)" }} />
+                    </div>
+                    <div style={{ width: "100px", height: "24px", background: "rgba(10, 28, 22, 0.1)" }} />
+                  </div>
+                ))}
+              </div>
             ) : approvedBlueprints.length > 0 ? (
               <div
                 style={{
@@ -189,78 +216,6 @@ export default function HistoryPage() {
               </div>
             )}
           </div>
-        </ScrollReveal>
-
-        <ScrollReveal variant="slide-up" delay={200}>
-          <h2
-            style={{
-              fontFamily: "var(--font-display)",
-              textTransform: "uppercase",
-              letterSpacing: "0.15em",
-              fontSize: "0.9rem",
-              fontWeight: 600,
-              color: "var(--text-primary)",
-              borderBottom: "1px solid rgba(10,28,22,0.1)",
-              paddingBottom: "0.75rem",
-              marginBottom: "1.5rem",
-              marginTop: "2rem"
-            }}
-          >
-            Activity Log
-          </h2>
-        </ScrollReveal>
-
-        <ScrollReveal variant="fade" delay={250}>
-          {history.length > 0 ? (
-            <div className="flex flex-col gap-4">
-              {history.map((item, index) => (
-                <div 
-                  key={index}
-                  className="p-6 border border-black/10 chamfer-top-left chamfer-bottom-right"
-                  style={{ background: "rgba(196, 215, 201, 0.05)" }}
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <h3 
-                      style={{ 
-                        fontFamily: "var(--font-display)", 
-                        textTransform: "uppercase",
-                        letterSpacing: "0.1em",
-                        fontSize: "0.85rem",
-                        fontWeight: 600
-                      }}
-                    >
-                      {item.action}
-                    </h3>
-                    <span 
-                      style={{ 
-                        fontFamily: "var(--font-sans)", 
-                        fontSize: "0.75rem",
-                        color: "var(--text-muted)"
-                      }}
-                    >
-                      {new Date(item.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  {(item.project_name || item.provider || item.sections_count) && (
-                    <p style={{ fontFamily: "var(--font-display)", fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: item.details ? "0.75rem" : 0 }}>
-                      {[item.project_name, item.provider, item.sections_count ? `${item.sections_count} sections` : null].filter(Boolean).join(" · ")}
-                    </p>
-                  )}
-                  {item.details && (
-                    <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", color: "var(--text-primary)" }}>
-                      {item.details}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-12 text-center border border-black/10">
-              <p style={{ fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                No history available yet.
-              </p>
-            </div>
-          )}
         </ScrollReveal>
       </div>
     </div>
