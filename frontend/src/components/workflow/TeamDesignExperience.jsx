@@ -1612,7 +1612,8 @@ export function TeamDesignExperience() {
           }
         }
         return m;
-     } else {
+      });
+    } else {
       let leadDevHours = 0;
       let midHours = 0;
       let juniorHours = 0;
