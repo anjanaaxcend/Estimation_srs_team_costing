@@ -515,24 +515,24 @@ const initializeFeatureList = (srs, companyRoster) => {
   });
 
   // Compute level slice limits based on which levels are present
+  // S3 does dev ONLY when no other dev level is present
   const totalFeatures = featureList.length;
   let s3Limit = 0;
   let s2Limit = 0;
-  if (hasS3 && hasS2 && hasS1) {
-    s3Limit = Math.round(totalFeatures * 0.20);
-    s2Limit = s3Limit + Math.round(totalFeatures * 0.30);
-  } else if (hasS2 && hasS1) {
-    s2Limit = Math.round(totalFeatures * 0.30);
-  } else if (hasS3 && hasS1) {
-    s3Limit = Math.round(totalFeatures * 0.30);
-    s2Limit = s3Limit;
-  } else if (hasS3 && hasS2) {
-    s3Limit = Math.round(totalFeatures * 0.40);
+  const hasOthers = hasS2 || hasS1;
+
+  if (hasS3 && !hasOthers) {
+    s3Limit = totalFeatures;
     s2Limit = totalFeatures;
-  } else if (hasS3) {
-    s3Limit = totalFeatures; s2Limit = totalFeatures;
-  } else if (hasS2) {
-    s2Limit = totalFeatures;
+  } else {
+    s3Limit = 0; // S3 gets 0% dev
+    if (hasS2 && hasS1) {
+      s2Limit = Math.round(totalFeatures * 0.30); // S2 gets 30%, S1 gets 70%
+    } else if (hasS2) {
+      s2Limit = totalFeatures; // S2 gets 100%
+    } else {
+      s2Limit = 0; // S1 gets 100%
+    }
   }
 
   // Helper to get assigned developer based on level slice and 70/30 split rule for 2 developers of same level

@@ -295,25 +295,18 @@ class TeamAllocationService:
         mid_hours = 0.0
         junior_hours = 0.0
 
-        if has_s3 and has_s2 and has_s1:
-            s3_hours = round(total_dev_hours * 0.20, 2)
-            mid_hours = round(total_dev_hours * 0.30, 2)
-            junior_hours = round(total_dev_hours * 0.50, 2)
-        elif has_s2 and has_s1:
-            mid_hours = round(total_dev_hours * 0.30, 2)
-            junior_hours = round(total_dev_hours * 0.70, 2)
-        elif has_s3 and has_s1:
-            s3_hours = round(total_dev_hours * 0.30, 2)
-            junior_hours = round(total_dev_hours * 0.70, 2)
-        elif has_s3 and has_s2:
-            s3_hours = round(total_dev_hours * 0.40, 2)
-            mid_hours = round(total_dev_hours * 0.60, 2)
-        elif has_s3:
+        has_others = has_s2 or has_s1
+        if has_s3 and not has_others:
             s3_hours = total_dev_hours
-        elif has_s2:
-            mid_hours = total_dev_hours
         else:
-            junior_hours = total_dev_hours
+            s3_hours = 0.0
+            if has_s2 and has_s1:
+                mid_hours = round(total_dev_hours * 0.30, 2)
+                junior_hours = round(total_dev_hours * 0.70, 2)
+            elif has_s2:
+                mid_hours = total_dev_hours
+            else:
+                junior_hours = total_dev_hours
 
         # 5. Roster matching with priority rules
         all_s3_res = self._find_all_developers_by_level(active_roster, "s3")
@@ -776,10 +769,10 @@ class TeamAllocationService:
                - IMPORTANT: Be highly realistic and practical about developer velocity. A high-complexity module feature should typically take 40 to 80 hours of total engineering effort, medium complexity 24 to 40 hours, and low complexity 8 to 20 hours. Do NOT overestimate and generate massive hours like 150-300 hours per feature module.
                - STRICT ROLE BRACKETS RULE:
                  * DEVELOPMENT WORK: Dynamically split based on roster availability:
-                   - If S3, S2, and S1 developers are all present: S3 Developer does 20% of development, S2 Developer does 30%, S1 Developer does 50%.
-                   - If S3 is missing but S2 and S1 are present: S2 Developer does 30%, S1 Developer does 70%.
-                   - If S2 is missing but S3 and S1 are present: S3 Developer does 30%, S1 Developer does 70%.
-                   - If S1 is missing but S3 and S2 are present: S3 Developer does 40%, S2 Developer does 60%.
+                   - If S3, S2, and S1 developers are all present: S3 Developer does 0% of development, S2 Developer does 30%, S1 Developer does 70%.
+                   - If S3 and S2 are present: S2 Developer does 100% of development, S3 Developer does 0%.
+                   - If S3 and S1 are present: S1 Developer does 100% of development, S3 Developer does 0%.
+                   - If S2 and S1 are present: S2 Developer does 30%, S1 Developer does 70%.
                    - Otherwise: 100% goes to the single present developer.
                  * TESTING & DEPLOYMENT WORK:
                    - Internal testing time allocation = 20% of development hours.
