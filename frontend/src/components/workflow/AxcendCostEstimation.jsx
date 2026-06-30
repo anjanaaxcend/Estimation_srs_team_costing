@@ -212,6 +212,12 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
   const [s2Count, setS2Count] = useState(1);
   const [s1Count, setS1Count] = useState(1);
 
+  const [pureS3Dev, setPureS3Dev] = useState(0);
+  const [pureS2Dev, setPureS2Dev] = useState(0);
+  const [pureS1Dev, setPureS1Dev] = useState(0);
+  const [testingHours, setTestingHours] = useState(0);
+  const [deploymentHours, setDeploymentHours] = useState(0);
+
   const [showSettings, setShowSettings] = useState(false);
   const [loaded, setLoaded]         = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -337,30 +343,84 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       let s2InitCount = 1;
       let s1InitCount = 1;
 
+      // Primary source: Load featureAllocations from localStorage
+      let featureAllocs = [];
+      try {
+        const tdRaw = window.localStorage.getItem("ai-project-planner-team-draft-v1");
+        if (tdRaw) {
+          const td = JSON.parse(tdRaw);
+          featureAllocs = td.featureAllocations || [];
+          if (td.preEngHours && typeof td.preEngHours === "object") {
+            preEngSum = Object.values(td.preEngHours).reduce((sum, v) => sum + (Number(v) || 0), 0);
+          }
+        }
+      } catch (e) {}
+
+      // Get counts from approvedTeam
       approvedTeam.members.forEach((m) => {
         const roleLower = (m.role || "").toLowerCase();
         const count = Number(m.count) || 1;
-        const hrs = (Number(m.hours_per_member) || 0) * count;
         const level = classifyMemberLevel(roleLower);
-        if (level === "pre_eng") {
-          preEngSum += hrs;
-        } else if (level === "S1") {
-          s1Sum += hrs;
-          s1InitCount = count;
-        } else if (level === "S2") {
-          s2Sum += hrs;
-          s2InitCount = count;
-        } else if (level === "S3") {
-          s3Sum += hrs;
-          s3InitCount = count;
-        }
-        // "pm" level is intentionally excluded from dev/eng hours
+        if (level === "S1") s1InitCount = count;
+        else if (level === "S2") s2InitCount = count;
+        else if (level === "S3") s3InitCount = count;
       });
 
+      let s3DevHoursSum = 0;
+      let s2DevHoursSum = 0;
+      let s1DevHoursSum = 0;
+      let testingHoursSum = 0;
+      let deploymentHoursSum = 0;
+
+      if (featureAllocs.length > 0) {
+        featureAllocs.forEach((f) => {
+          const hours = Number(f.hours) || 0;
+          const level = classifyMemberLevel((f.developer || "").toLowerCase());
+          if (f.isTesting === true) {
+            testingHoursSum += hours;
+          } else if (f.isDeployment === true) {
+            deploymentHoursSum += hours;
+          } else {
+            if (level === "S3") s3DevHoursSum += hours;
+            else if (level === "S2") s2DevHoursSum += hours;
+            else s1DevHoursSum += hours;
+          }
+        });
+        if (preEngSum === 0) preEngSum = 128; // Default fallback
+      } else {
+        // Fallback: Loop approvedTeam members
+        approvedTeam.members.forEach((m) => {
+          const roleLower = (m.role || "").toLowerCase();
+          const count = Number(m.count) || 1;
+          const hrs = (Number(m.hours_per_member) || 0) * count;
+          const level = classifyMemberLevel(roleLower);
+          if (level === "pre_eng") {
+            preEngSum += hrs;
+          } else if (level === "S1") {
+            s1DevHoursSum += hrs;
+          } else if (level === "S2") {
+            const tst = Math.min(hrs, 216);
+            testingHoursSum += tst;
+            s2DevHoursSum += (hrs - tst);
+          } else if (level === "S3") {
+            const dep = Math.min(hrs, 72);
+            deploymentHoursSum += dep;
+            s3DevHoursSum += (hrs - dep);
+          }
+        });
+      }
+
       setPreEngHours(preEngSum || 128);
-      setS1Hours(s1Sum);
-      setS2Hours(s2Sum);
-      setS3DevHours(s3Sum);
+      setS1Hours(s1DevHoursSum);
+      setS2Hours(s2DevHoursSum + testingHoursSum);
+      setS3DevHours(s3DevHoursSum + deploymentHoursSum);
+      
+      setPureS3Dev(s3DevHoursSum);
+      setPureS2Dev(s2DevHoursSum);
+      setPureS1Dev(s1DevHoursSum);
+      setTestingHours(testingHoursSum);
+      setDeploymentHours(deploymentHoursSum);
+
       setS3Count(s3InitCount);
       setS2Count(s2InitCount);
       setS1Count(s1InitCount);
@@ -374,26 +434,14 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
   // Unified calculations
   const result = useMemo(() => {
     const preEngHoursVal = Math.round(preEngHours);
-    const s1HoursVal = Math.round(s1Hours);
-    const s2HoursVal = Math.round(s2Hours);
-    const s3DevHoursVal = Math.round(s3DevHours);
 
-    const devHours = Math.round(preEngHoursVal + s1HoursVal + s2HoursVal + s3DevHoursVal);
+    const devHours = Math.round(preEngHoursVal + pureS1Dev + pureS2Dev + pureS3Dev + testingHours + deploymentHours);
     const pmHours = Math.round(devHours * (pmPct / 100));
-
-    // Testing and deployment hours (constant overheads)
-    const deploymentHours = Math.min(s3DevHoursVal, 72); // 72 hrs is deployment
-    const pureS3Dev = s3DevHoursVal - deploymentHours;
-
-    const testingHours = Math.min(s2HoursVal, 216); // 216 hrs is testing
-    const pureS2Dev = s2HoursVal - testingHours;
-
-    const pureS1Dev = s1HoursVal;
 
     // Displayed hours per developer (reduced by dev count!)
     const s3HoursPerDev = Math.round((pureS3Dev / s3Count) + preEngHoursVal + deploymentHours);
     const s2HoursPerDev = Math.round((pureS2Dev / s2Count) + testingHours);
-    const s1HoursPerDev = Math.round(s1HoursVal / s1Count);
+    const s1HoursPerDev = Math.round(pureS1Dev / s1Count);
 
     const s3ManDays = s3HoursPerDev / 8;
     const s2ManDays = s2HoursPerDev / 8;
@@ -465,7 +513,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
       testingHours,
       deploymentHours,
     };
-  }, [preEngHours, s1Hours, s2Hours, s3DevHours, s3Rate, s2Rate, s1Rate, pmPct, financePct, forexPct, riskPct, negoPct, s3Count, s2Count, s1Count]);
+  }, [preEngHours, pureS1Dev, pureS2Dev, pureS3Dev, testingHours, deploymentHours, s3Rate, s2Rate, s1Rate, pmPct, financePct, forexPct, riskPct, negoPct, s3Count, s2Count, s1Count]);
 
   const handleExportAxcend = async () => {
     setExporting(true);
