@@ -2533,18 +2533,6 @@ export function TeamDesignExperience() {
                           )}
                           {/* Development, Testing, and Deployment breakdown box */}
                           {(() => {
-                            const devHoursOnly = resolvedFeatureAllocations
-                              .filter(f => !f.isTesting && !f.isDeployment)
-                              .reduce((sum, f) => sum + (f.hours || 0), 0);
-
-                            const testingHoursOnly = resolvedFeatureAllocations
-                              .filter(f => f.isTesting === true)
-                              .reduce((sum, f) => sum + (f.hours || 0), 0);
-
-                            const deploymentHoursOnly = resolvedFeatureAllocations
-                              .filter(f => f.isDeployment === true)
-                              .reduce((sum, f) => sum + (f.hours || 0), 0);
-
                             const devDaysOnly = resolvedFeatureAllocations
                               .filter(f => !f.isTesting && !f.isDeployment)
                               .reduce((sum, f) => sum + Math.max(0.5, Math.round((f.hours / (8 * (f.developerCount || 1))) * 2) / 2), 0);
@@ -2561,17 +2549,17 @@ export function TeamDesignExperience() {
                               <div className="grid grid-cols-3 gap-4 p-3.5 border border-parcelles-dark/10 bg-parcelles-sage/5 rounded mb-3 font-body text-xs text-parcelles-dark">
                                 <div className="text-center border-r border-parcelles-dark/10">
                                   <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Development</span>
-                                  <span className="font-mono text-sm font-bold block">{devHoursOnly} hrs</span>
+                                  <span className="font-mono text-sm font-bold block">{Math.round(devDaysOnly * 8)} hrs</span>
                                   <span className="font-mono text-[10px] text-parcelles-dark/60 block">{devDaysOnly.toFixed(1).replace(/\.0$/, '')} days</span>
                                 </div>
                                 <div className="text-center border-r border-parcelles-dark/10">
                                   <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Testing</span>
-                                  <span className="font-mono text-sm font-bold block">{testingHoursOnly} hrs</span>
+                                  <span className="font-mono text-sm font-bold block">{Math.round(testingDaysOnly * 8)} hrs</span>
                                   <span className="font-mono text-[10px] text-parcelles-dark/60 block">{testingDaysOnly.toFixed(1).replace(/\.0$/, '')} days</span>
                                 </div>
                                 <div className="text-center">
                                   <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/60 block mb-1">Deployment</span>
-                                  <span className="font-mono text-sm font-bold block">{deploymentHoursOnly} hrs</span>
+                                  <span className="font-mono text-sm font-bold block">{Math.round(deploymentDaysOnly * 8)} hrs</span>
                                   <span className="font-mono text-[10px] text-parcelles-dark/60 block">{deploymentDaysOnly.toFixed(1).replace(/\.0$/, '')} days</span>
                                 </div>
                               </div>
@@ -2588,7 +2576,7 @@ export function TeamDesignExperience() {
                             return (
                               <div className="flex items-center justify-between pt-2 border-t border-parcelles-dark/10">
                                 <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Engineering Effort:</span>
-                                <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(engineeringTotal)} hrs / {totalEngineeringDays.toFixed(1).replace(/\.0$/, '')} days</span>
+                                <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(totalEngineeringDays * 8)} hrs / {totalEngineeringDays.toFixed(1).replace(/\.0$/, '')} days</span>
                               </div>
                             );
                           })()}
@@ -2607,7 +2595,7 @@ export function TeamDesignExperience() {
                           return (
                             <div className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg p-4 flex justify-between items-center rounded shadow-sm">
                               <span className="font-display text-sm uppercase tracking-wider font-bold">Grand Total of Project Team Allocation Efforts Estimation</span>
-                              <span className="font-mono text-xl font-bold">{Math.round(grandTotal)} hrs / {grandTotalDays.toFixed(1).replace(/\.0$/, '')} days</span>
+                              <span className="font-mono text-xl font-bold">{Math.round(grandTotalDays * 8)} hrs / {grandTotalDays.toFixed(1).replace(/\.0$/, '')} days</span>
                             </div>
                           );
                         })()}
