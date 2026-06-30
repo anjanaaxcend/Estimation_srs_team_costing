@@ -1164,29 +1164,61 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
                 Pre-Engineering
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(preEngHours, 0)}
+                {fmtNum(result.preEngHoursVal, 0)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(result.preEngDays, 0)}
+                {fmtNum(result.preEngHoursVal / 8, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
-                {fmtCost(result.preEngCost, curr)}
+                {fmtCost(Math.round((result.preEngHoursVal / 8) * s3Rate), curr)}
               </td>
             </tr>
 
-            {/* Engineering */}
+            {/* Development */}
             <tr className="hover:bg-parcelles-sage/5">
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
-                Engineering (Development, Testing & Deployment)
-              </td>
-              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
-                {fmtNum(s1Hours + s2Hours + s3DevHours, 0)}
+                Development
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
-                {fmtNum(result.engDays, 0)}
+                {fmtNum((result.pureS3Dev / s3Count) + (result.pureS2Dev / s2Count) + (result.pureS1Dev / s1Count), 1)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
+                {fmtNum(((result.pureS3Dev / s3Count) + (result.pureS2Dev / s2Count) + (result.pureS1Dev / s1Count)) / 8, 1)}
               </td>
               <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
-                {fmtCost(result.engCost, curr)}
+                {fmtCost(Math.round((result.pureS3Dev / 8 * s3Rate) + (result.pureS2Dev / 8 * s2Rate) + (result.pureS1Dev / 8 * s1Rate)), curr)}
+              </td>
+            </tr>
+
+            {/* Testing */}
+            <tr className="hover:bg-parcelles-sage/5">
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
+                Testing
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
+                {fmtNum(result.testingHours, 0)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
+                {fmtNum(result.testingHours / 8, 1)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
+                {fmtCost(Math.round((result.testingHours / 8) * s2Rate), curr)}
+              </td>
+            </tr>
+
+            {/* Deployment */}
+            <tr className="hover:bg-parcelles-sage/5">
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-left font-semibold">
+                Deployment
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
+                {fmtNum(result.deploymentHours, 0)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-mono">
+                {fmtNum(result.deploymentHours / 8, 1)}
+              </td>
+              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
+                {fmtCost(Math.round((result.deploymentHours / 8) * s3Rate), curr)}
               </td>
             </tr>
 
