@@ -9,7 +9,7 @@ export function HeroWorld() {
       
       {/* Top Banner */}
       <div className="p-8 border-b-strong flex justify-between items-center">
-        <span className="sans-label">ScopeSense v2</span>
+        <span className="sans-label">Estimator v2</span>
         <span className="sans-label">AI Strategy</span>
       </div>
 
@@ -22,7 +22,7 @@ export function HeroWorld() {
             Planning.
           </h1>
           <p className="font-sans text-2xl max-w-xl leading-relaxed">
-            ScopeSense analyzes your raw briefs, generates technical specifications, designs team architectures, and estimates cost—all instantly.
+            Estimator analyzes your raw briefs, generates technical specifications, designs team architectures, and estimates cost—all instantly.
           </p>
         </div>
 

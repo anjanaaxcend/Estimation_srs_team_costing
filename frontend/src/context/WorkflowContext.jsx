@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 
-import { runSrsPipeline, getTempDraft, normalizeSrs } from "@/lib/platformApi";
+import { runSrsPipeline, getTempDraft, normalizeSrs, getApprovedSRS } from "@/lib/platformApi";
 import { clearCostDraft } from "@/lib/costEstimationStorage";
 import { clearApprovedTeam } from "@/lib/workflowArtifacts";
 import { useAuth } from "@/context/AuthContext";
@@ -44,6 +44,10 @@ export function WorkflowProvider({ children }) {
   const updateSrsData = (newData) => {
     setHistory((prev) => [...prev, srsData]);
     setSrsData(newData);
+    try {
+      const payload = { projectTitle, source, rawInput, cleanedInput, selectedEngine, srsData: newData };
+      window.localStorage.setItem(storageKey, JSON.stringify(payload));
+    } catch (e) {}
   };
 
   // Restore state from DB or localStorage on mount (fixes the blank SRS after refresh bug)
@@ -81,6 +85,27 @@ export function WorkflowProvider({ children }) {
           }
           setIsHydrated(true);
           return;
+        } else {
+          // If no temporary draft exists, check for the latest approved SRS in the DB
+          try {
+            const approvedList = await getApprovedSRS();
+            if (approvedList && approvedList.length > 0) {
+              const latestApproved = approvedList[0];
+              const normalized = normalizeSrs(latestApproved.content);
+              setSrsData(normalized);
+              if (normalized.structuredRequirements?.project_name) {
+                setProjectTitle(normalized.structuredRequirements.project_name);
+              }
+              if (normalized.cleanedText) {
+                setCleanedInput(normalized.cleanedText);
+                setRawInput(normalized.cleanedText);
+              }
+              setIsHydrated(true);
+              return;
+            }
+          } catch (approvedErr) {
+            console.warn("Failed to fetch approved SRS:", approvedErr);
+          }
         }
       } catch (err) {
         console.error("Failed to restore draft from DB, falling back to localStorage", err);

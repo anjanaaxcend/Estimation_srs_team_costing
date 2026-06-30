@@ -32,12 +32,9 @@ except ImportError:
 
 class TeamAllocationService:
     ROLE_HINTS = (
-        "lead full stack developer",
-        "senior full stack developer",
-        "junior full stack developer",
-        "qa tester",
-        "project manager",
-        "devops engineer",
+        "s3 developer",
+        "s2 developer",
+        "s1 developer",
     )
 
     def __init__(self) -> None:
@@ -87,11 +84,7 @@ class TeamAllocationService:
         if provider == "anthropic":
             return [runtime_model or "claude-3-5-sonnet-latest"]
 
-        if provider == "ollama":
-            return unique_model_candidates(
-                [runtime_model, settings.ollama_srs_model],
-                settings.ollama_srs_fallback_models,
-            )
+
 
         if provider == "gemini":
             return unique_model_candidates(
@@ -113,8 +106,7 @@ class TeamAllocationService:
                 return
             if provider == "gemini" and not settings.gemini_api_key:
                 return
-            if provider == "ollama" and not settings.ollama_srs_enabled:
-                return
+
 
             selection = base_selection if base_selection and base_selection.provider == provider else ModelSelection(provider=provider)
             for model_name in self._candidate_models(selection):
@@ -128,7 +120,7 @@ class TeamAllocationService:
                 )
 
         add_provider(primary.provider, primary)
-        for fallback_provider in ("openai", "gemini", "ollama"):
+        for fallback_provider in ("openai", "gemini"):
             if fallback_provider != primary.provider:
                 add_provider(fallback_provider)
 
@@ -153,13 +145,7 @@ class TeamAllocationService:
                 "api_key": runtime_key or "",
             }
 
-        if provider == "ollama":
-            return {
-                "provider": "ollama",
-                "model": (selected_model.model if selected_model and selected_model.model else settings.ollama_srs_model),
-                "base_url": (selected_model.base_url if selected_model and selected_model.base_url else settings.ollama_api_base),
-                "api_key": runtime_key or settings.ollama_api_key or "ollama",
-            }
+
 
         if provider == "gemini":
             return {
@@ -176,6 +162,60 @@ class TeamAllocationService:
             "base_url": (selected_model.base_url if selected_model and selected_model.base_url else settings.openai_api_base),
             "api_key": runtime_key or settings.openai_api_key or "",
         }
+
+    @staticmethod
+    def _find_developer_by_level(roster: list[CompanyResource], level: str) -> CompanyResource | None:
+        level = level.lower()
+        if level == "s3":
+            keywords = ["s3", "lead", "architect"]
+        elif level == "s2":
+            keywords = ["s2", "senior"]
+        else:
+            keywords = ["s1", "junior"]
+            
+        for r in roster:
+            role_lower = (r.role or "").lower()
+            if any(kw in role_lower for kw in keywords):
+                return r
+        for r in roster:
+            exp = r.experience_years
+            if level == "s3" and exp >= 10.0:
+                return r
+            elif level == "s2" and 5.0 <= exp < 10.0:
+                return r
+            elif level == "s1" and exp < 5.0:
+                return r
+        return None
+
+    @staticmethod
+    def _find_all_developers_by_level(roster: list[CompanyResource], level: str) -> list[CompanyResource]:
+        level = level.lower()
+        if level == "s3":
+            keywords = ["s3", "lead", "architect"]
+        elif level == "s2":
+            keywords = ["s2", "senior"]
+        else:
+            keywords = ["s1", "junior"]
+            
+        found = []
+        for r in roster:
+            role_lower = (r.role or "").lower()
+            if any(kw in role_lower for kw in keywords):
+                if r not in found:
+                    found.append(r)
+        for r in roster:
+            exp = r.experience_years
+            if level == "s3" and exp >= 10.0:
+                if r not in found:
+                    found.append(r)
+            elif level == "s2" and 5.0 <= exp < 10.0:
+                if r not in found:
+                    found.append(r)
+            elif level == "s1" and exp < 5.0:
+                if r not in found:
+                    found.append(r)
+        return found
+
 
     @staticmethod
     def _find_resource_for_bracket_static(
@@ -204,6 +244,11 @@ class TeamAllocationService:
         if candidates_any_role:
             return max(candidates_any_role, key=lambda x: x.experience_years)
             
+        # Fourth pass: if roster is not empty, fallback to the resource with the closest experience
+        if roster:
+            target_exp = (min_exp + (max_exp if max_exp < 100.0 else min_exp + 5.0)) / 2.0
+            return min(roster, key=lambda x: abs(x.experience_years - target_exp))
+            
         return CompanyResource(name="Fallback", role=fallback_role, experience_years=fallback_exp)
 
     def _build_scenario_team_structure(
@@ -221,154 +266,192 @@ class TeamAllocationService:
         if total_dev_hours <= 0:
             total_dev_hours = 160.0
 
-        # 2. Testing and deployment hours (senior dev)
-        testing_internal_hours = round(total_dev_hours * 0.15, 2)
-        testing_external_hours = round(total_dev_hours * 0.15, 2)
+        # 2. Testing, deployment, and pre-engineering hours
+        testing_internal_hours = round(total_dev_hours * 0.20, 2)
+        testing_external_hours = round(total_dev_hours * 0.10, 2)
         deployment_hours = round(total_dev_hours * 0.10, 2)
-        req_fetch_hours = 16.0
-        weekly_meetings_hours = 16.0
-        kt_hours = 8.0
+        pre_engineering_hours = 32.0  # 32 hours minimum
 
-        senior_hours = round(testing_internal_hours + testing_external_hours + deployment_hours + req_fetch_hours + weekly_meetings_hours + kt_hours, 2)
-        total_base_effort = round(total_dev_hours + senior_hours, 2)
+        # Total engineering hours (Development + Testing + Deployment)
+        total_engineering_hours = round(total_dev_hours + testing_internal_hours + testing_external_hours + deployment_hours, 2)
 
-        # 3. Project Management hours
-        pm_hours = round(total_base_effort * 0.15, 2)
+        # 3. Project Management hours is not needed in team efforts estimation, only in costing.
 
-        # 4. Risk and Negotiation
-        total_efforts_estimation = round(total_base_effort + pm_hours, 2)
-        risk_hours = round(total_efforts_estimation * 0.10, 2)
-        negotiation_hours = round(total_efforts_estimation * 0.05, 2)
+        # 4. Developer allocation split based on roster availability
+        has_s3 = any(
+            any(kw in (r.role or "").lower() for kw in ["s3", "lead", "architect"]) or r.experience_years >= 10.0
+            for r in active_roster
+        )
+        has_s2 = any(
+            any(kw in (r.role or "").lower() for kw in ["s2", "senior"]) or (5.0 <= r.experience_years < 10.0)
+            for r in active_roster
+        )
+        has_s1 = any(
+            (not any(kw in (r.role or "").lower() for kw in ["s3", "lead", "architect", "s2", "senior"]) and r.experience_years < 5.0) or any(kw in (r.role or "").lower() for kw in ["s1", "junior"])
+            for r in active_roster
+        )
 
-        # 5. Developer allocation split by option
-        if opt_key == "fastest":
+        s3_hours = 0.0
+        mid_hours = 0.0
+        junior_hours = 0.0
+
+        if has_s3 and has_s2 and has_s1:
+            s3_hours = round(total_dev_hours * 0.20, 2)
+            mid_hours = round(total_dev_hours * 0.30, 2)
+            junior_hours = round(total_dev_hours * 0.50, 2)
+        elif has_s2 and has_s1:
+            mid_hours = round(total_dev_hours * 0.30, 2)
+            junior_hours = round(total_dev_hours * 0.70, 2)
+        elif has_s3 and has_s1:
+            s3_hours = round(total_dev_hours * 0.30, 2)
+            junior_hours = round(total_dev_hours * 0.70, 2)
+        elif has_s3 and has_s2:
+            s3_hours = round(total_dev_hours * 0.40, 2)
+            mid_hours = round(total_dev_hours * 0.60, 2)
+        elif has_s3:
+            s3_hours = total_dev_hours
+        elif has_s2:
             mid_hours = total_dev_hours
-            junior_hours = 0.0
-            mid_count = 2
-            junior_count = 0
-            # Dev hours are halved by parallel staff
-            mid_hours_per_member = round(mid_hours / 2.0, 2)
-            junior_hours_per_member = 0.0
-        elif opt_key == "lean":
-            mid_hours = round(total_dev_hours * 0.50, 2)
-            junior_hours = round(total_dev_hours * 0.50, 2)
-            mid_count = 1
-            junior_count = 1
-            mid_hours_per_member = mid_hours
-            junior_hours_per_member = junior_hours
-        else: # balanced
-            mid_hours = round(total_dev_hours * 0.50, 2)
-            junior_hours = round(total_dev_hours * 0.50, 2)
-            mid_count = 1
-            junior_count = 1
-            mid_hours_per_member = mid_hours
-            junior_hours_per_member = junior_hours
+        else:
+            junior_hours = total_dev_hours
 
-        # 6. Roster matching
-        res_senior = self._find_resource_for_bracket_static(active_roster, ["developer", "engineer", "architect"], min_exp=10.01, fallback_role="Lead Full Stack Developer", fallback_exp=12.0)
-        res_mid = self._find_resource_for_bracket_static(active_roster, ["developer", "engineer", "architect"], min_exp=5.0, max_exp=10.0, fallback_role="Senior Full Stack Developer", fallback_exp=8.0)
-        res_junior = self._find_resource_for_bracket_static(active_roster, ["developer", "engineer", "architect"], min_exp=0.0, max_exp=4.99, fallback_role="Junior Full Stack Developer", fallback_exp=2.0)
-        res_pm = self._find_resource_for_bracket_static(active_roster, ["manager", "pm", "scrum", "analyst"], min_exp=0.0, fallback_role="Project Manager", fallback_exp=10.0)
+        # 5. Roster matching with priority rules
+        all_s3_res = self._find_all_developers_by_level(active_roster, "s3")
+        all_s2_res = self._find_all_developers_by_level(active_roster, "s2")
+        all_s1_res = self._find_all_developers_by_level(active_roster, "s1")
 
-        # 7. Create member estimates
+        # Fallbacks if list is empty
+        if not all_s3_res:
+            all_s3_res = [CompanyResource(name="S3 Developer", role="S3 Developer", experience_years=12.0)]
+        if not all_s2_res:
+            all_s2_res = [CompanyResource(name="S2 Developer", role="S2 Developer", experience_years=8.0)]
+        if not all_s1_res:
+            all_s1_res = [CompanyResource(name="S1 Developer", role="S1 Developer", experience_years=2.0)]
+
+        # Pre-dep resource pool: priority S3 -> S2 -> S1
+        pre_dep_pool = all_s3_res if has_s3 else (all_s2_res if has_s2 else all_s1_res)
+        
+        # Testing resource pool: priority S2 -> S1 -> S3
+        testing_pool = all_s2_res if has_s2 else (all_s1_res if has_s1 else all_s3_res)
+
+        # Helper to construct a display role name
+        def get_display_role(r: CompanyResource, suffix: str = "") -> str:
+            prefix = f"{r.name} ({r.role})" if r.name and r.name != r.role else r.role
+            sfx = f" ({suffix})" if suffix else ""
+            return f"{prefix}{sfx} ({r.experience_years:g} Yrs Exp)"
+
+        # 6. Create member estimates
         members_list = []
 
-        # Senior Dev - Testing
-        testing_senior_hours = round(testing_internal_hours + testing_external_hours + req_fetch_hours + weekly_meetings_hours + kt_hours, 2)
+        # Pre-Engineering (attributed to the lead pre-dep developer)
+        lead_pre_dep = pre_dep_pool[0]
         members_list.append(
             TeamMemberEstimate(
-                role=f"{res_senior.role} (Testing) ({res_senior.experience_years:g} Yrs Exp)",
+                role=get_display_role(lead_pre_dep, "Pre-Engineering"),
                 count=1,
-                description="Handles internal testing (15%), external testing (15%), client requirements (16h), weekly meetings (16h), and KT (8h).",
+                description="Handles pre-engineering activities (32 hours).",
                 weekly_hours=40.0,
-                active_weeks=round((testing_senior_hours / 40.0) * 0.75, 2),
-                hours_per_member=testing_senior_hours
+                active_weeks=round(pre_engineering_hours / 40.0, 2),
+                hours_per_member=pre_engineering_hours
             )
         )
 
-        # Senior Dev - Deployment
-        members_list.append(
-            TeamMemberEstimate(
-                role=f"{res_senior.role} (Deployment) ({res_senior.experience_years:g} Yrs Exp)",
-                count=1,
-                description="Handles deployment activities (10%).",
-                weekly_hours=40.0,
-                active_weeks=round((deployment_hours / 40.0) * 0.75, 2),
-                hours_per_member=deployment_hours
+        # Deployment (split among all developers in the pre-dep pool)
+        deploy_hours_per_member = round(deployment_hours / len(pre_dep_pool), 2)
+        for r in pre_dep_pool:
+            members_list.append(
+                TeamMemberEstimate(
+                    role=get_display_role(r, "Deployment"),
+                    count=1,
+                    description="Handles deployment activities (10%).",
+                    weekly_hours=40.0,
+                    active_weeks=round(deploy_hours_per_member / 40.0, 2),
+                    hours_per_member=deploy_hours_per_member
+                )
             )
-        )
 
-        # Mid-level Dev
+        # Testing (split among all developers in the testing pool)
+        testing_senior_hours = round(testing_internal_hours + testing_external_hours, 2)
+        test_hours_per_member = round(testing_senior_hours / len(testing_pool), 2)
+        for r in testing_pool:
+            # check if r is S1, S2, or S3 to select correct multiplier
+            r_role = (r.role or "").lower()
+            if any(kw in r_role for kw in ["s3", "lead", "architect"]) or r.experience_years >= 10.0:
+                testing_mult = 1.0
+            elif any(kw in r_role for kw in ["s2", "senior"]) or (5.0 <= r.experience_years < 10.0):
+                testing_mult = 0.75
+            else:
+                testing_mult = 1.30
+
+            members_list.append(
+                TeamMemberEstimate(
+                    role=get_display_role(r, "Testing"),
+                    count=1,
+                    description="Handles internal testing (20%) and client testing (10%).",
+                    weekly_hours=40.0,
+                    active_weeks=round((test_hours_per_member / 40.0) * testing_mult, 2),
+                    hours_per_member=test_hours_per_member
+                )
+            )
+
+        # S3 Developer (core development split among all S3s)
+        if s3_hours > 0:
+            s3_hours_per_member = round(s3_hours / len(all_s3_res), 2)
+            for r in all_s3_res:
+                members_list.append(
+                    TeamMemberEstimate(
+                        role=get_display_role(r),
+                        count=1,
+                        description="Handles core/architectural development tasks.",
+                        weekly_hours=40.0,
+                        active_weeks=round(s3_hours_per_member / 40.0, 2),
+                        hours_per_member=s3_hours_per_member
+                    )
+                )
+
+        # S2 Developer (core development split among all S2s)
         if mid_hours > 0:
-            members_list.append(
-                TeamMemberEstimate(
-                    role=f"{res_mid.role} ({res_mid.experience_years:g} Yrs Exp)",
-                    count=mid_count,
-                    description="Handles core module development tasks.",
-                    weekly_hours=40.0,
-                    active_weeks=round((mid_hours_per_member / 40.0), 2),
-                    hours_per_member=mid_hours_per_member
+            mid_hours_per_member = round(mid_hours / len(all_s2_res), 2)
+            for r in all_s2_res:
+                members_list.append(
+                    TeamMemberEstimate(
+                        role=get_display_role(r),
+                        count=1,
+                        description="Handles core module development tasks.",
+                        weekly_hours=40.0,
+                        active_weeks=round((mid_hours_per_member / 40.0) * 0.75, 2),
+                        hours_per_member=mid_hours_per_member
+                    )
                 )
-            )
 
-        # Junior Dev
+        # S1 Developer (core development split among all S1s)
         if junior_hours > 0:
-            members_list.append(
-                TeamMemberEstimate(
-                    role=f"{res_junior.role} ({res_junior.experience_years:g} Yrs Exp)",
-                    count=junior_count,
-                    description="Assists with module development tasks.",
-                    weekly_hours=40.0,
-                    active_weeks=round((junior_hours_per_member / 40.0) * 1.30, 2), # 1.30 learning curve factor
-                    hours_per_member=junior_hours_per_member
+            junior_hours_per_member = round(junior_hours / len(all_s1_res), 2)
+            for r in all_s1_res:
+                members_list.append(
+                    TeamMemberEstimate(
+                        role=get_display_role(r),
+                        count=1,
+                        description="Assists with module development tasks.",
+                        weekly_hours=40.0,
+                        active_weeks=round((junior_hours_per_member / 40.0) * 1.30, 2),
+                        hours_per_member=junior_hours_per_member
+                    )
                 )
-            )
 
-        # Project Manager
-        members_list.append(
-            TeamMemberEstimate(
-                role=f"{res_pm.role} ({res_pm.experience_years:g} Yrs Exp)",
-                count=1,
-                description="Provides project management and delivery governance (15% of total base effort).",
-                weekly_hours=40.0,
-                active_weeks=round(pm_hours / 40.0, 2),
-                hours_per_member=pm_hours
-            )
-        )
 
-        # Risk Contingency virtual member
-        members_list.append(
-            TeamMemberEstimate(
-                role="Risk Contingency (10%)",
-                count=1,
-                description="Calculated contingency buffer (10% of efforts estimation).",
-                weekly_hours=40.0,
-                active_weeks=round(risk_hours / 40.0, 2),
-                hours_per_member=risk_hours
-            )
-        )
-
-        # Negotiation Buffer virtual member
-        members_list.append(
-            TeamMemberEstimate(
-                role="Negotiation Buffer (5%)",
-                count=1,
-                description="Calculated negotiation buffer (5% of efforts estimation).",
-                weekly_hours=40.0,
-                active_weeks=round(negotiation_hours / 40.0, 2),
-                hours_per_member=negotiation_hours
-            )
-        )
+        # Project Manager row is removed from team efforts estimation.
 
         computed_total_hours = sum(int(m.count) * float(m.hours_per_member or 0.0) for m in members_list)
         max_active_weeks = max(float(m.active_weeks or 0.0) for m in members_list)
-        total_size = sum(m.count for m in members_list if not m.role.startswith("Risk") and not m.role.startswith("Negotiation"))
+        total_size = sum(m.count for m in members_list)
 
         if not logic_summary:
+            pre_dep_name = pre_dep_pool[0].name if pre_dep_pool else "S3/lead"
+            testing_name = testing_pool[0].name if testing_pool else "S2"
             logic_summary = (
                 f"{opt_key.title()} team structure generated from {total_dev_hours:g} dev hours. "
-                f"Testing (30%) & Deployment (10%) allocated to Senior Developer. "
-                f"Project Management (15%), Risk (10%), and Negotiation (5%) buffers included."
+                f"Testing (30%) allocated to {testing_name}. Pre-Engineering (32h) and Deployment (10%) allocated to {pre_dep_name}."
             )
 
         return TeamStructure(
@@ -380,6 +463,8 @@ class TeamAllocationService:
             total_working_weeks=round(max_active_weeks, 2),
             total_project_hours=round(computed_total_hours, 2)
         )
+
+
 
     def analyze_srs_for_team(
         self,
@@ -465,12 +550,9 @@ class TeamAllocationService:
 
         # Set up active roster
         DEFAULT_ROSTER = [
-            CompanyResource(name="Resource A", role="Lead Full Stack Developer", experience_years=12.0),
-            CompanyResource(name="Resource B", role="Senior Full Stack Developer", experience_years=8.0),
-            CompanyResource(name="Resource C", role="Junior Full Stack Developer", experience_years=2.0),
-            CompanyResource(name="Resource D", role="QA Tester", experience_years=4.0),
-            CompanyResource(name="Resource E", role="Project Manager", experience_years=10.0),
-            CompanyResource(name="Resource F", role="DevOps Engineer", experience_years=7.0),
+            CompanyResource(name="Resource A", role="S3 Developer", experience_years=12.0),
+            CompanyResource(name="Resource B", role="S2 Developer", experience_years=8.0),
+            CompanyResource(name="Resource C", role="S1 Developer", experience_years=2.0),
         ]
         
         active_roster = company_roster if company_roster else self._default_roster()
@@ -533,16 +615,13 @@ class TeamAllocationService:
            - "lean": Use fewer roles — even if it means less experienced roles that take longer (more active_weeks).
              Minimise headcount, maximise calendar time.
 
-        4. OUTPUT ROLE FORMAT (mandatory — NO personal names):
-           `<Role Title> (<Experience Years> Yrs Exp)`
-           Examples:
-           - "Lead Full Stack Developer (12 Yrs Exp)"
-           - "Senior Full Stack Developer (8 Yrs Exp)"
-           - "Junior Full Stack Developer (2 Yrs Exp)"
-           - "QA Tester (4 Yrs Exp)"
-           - "Project Manager (10 Yrs Exp)"
-           - "DevOps Engineer (7 Yrs Exp)"
-           Only use roles and experience years that exist in the roster above.
+            4. OUTPUT ROLE FORMAT (mandatory — NO personal names):
+            `<Role Title> (<Experience Years> Yrs Exp)`
+            Examples:
+            - "S3 Developer (12 Yrs Exp)"
+            - "S2 Developer (8 Yrs Exp)"
+            - "S1 Developer (2 Yrs Exp)"
+            Only use roles and experience years that exist in the roster above.
             NEVER include any person's name in the output.
          """)
 
@@ -556,10 +635,10 @@ class TeamAllocationService:
         - Still return all three scenarios: fastest, balanced, and lean.
         - However, treat the user's preferred strategy as the default recommended option and align its logic_summary to clearly explain why it fits the user's preference.
         - For module-wise allocations, focus on DEVELOPMENT and TESTING work for each module.
-        - Project management and deployment / DevOps must NOT be omitted from the team design. Include them in the overall team options and total effort.
-        - Project management and deployment coverage should be reasoned separately from module build work, but their effort must remain INCLUDED in the same team allocation result, total_project_hours, and total_working_weeks.
+        - Deployment / DevOps must NOT be omitted from the team design. Include them in the overall team options and total effort. Project Management is NOT needed in the team efforts estimation.
+        - Deployment coverage should be reasoned separately from module build work, but their effort must remain INCLUDED in the same team allocation result, total_project_hours, and total_working_weeks.
         - Calibrate support intensity:
-          * LIGHT: minimal but credible PM / DevOps oversight.
+          * LIGHT: minimal but credible DevOps oversight.
           * STANDARD: normal delivery governance and release support.
           * INTENSIVE: strong coordination, release management, and operational readiness coverage.
         """)
@@ -572,7 +651,7 @@ class TeamAllocationService:
         )
 
         provider_preamble = ""
-        if provider in {"ollama", "gemini", "anthropic"}:
+        if provider in {"gemini", "anthropic"}:
             provider_preamble = dedent("""
             CRITICAL INSTRUCTION FOR THIS PROVIDER:
             You MUST output ONLY a single valid JSON object. Nothing else.
@@ -622,46 +701,41 @@ class TeamAllocationService:
                - For EACH module, you must also provide a detailed Feature/Module-wise Team Allocation mapping out who does what under each of the three scenarios (Fastest, Balanced, Lean).
                - IMPORTANT: Be highly realistic and practical about developer velocity. A high-complexity module feature should typically take 40 to 80 hours of total engineering effort, medium complexity 24 to 40 hours, and low complexity 8 to 20 hours. Do NOT overestimate and generate massive hours like 150-300 hours per feature module.
                - STRICT ROLE BRACKETS RULE:
-                 * DEVELOPMENT WORK: Done ONLY by Mid-level and Junior developers (experience <= 10 years).
-                 * TESTING & DEPLOYMENT WORK: Done ONLY by Senior developers (experience > 10 years).
-                   - Internal testing time allocation = 15% of development hours.
-                   - External testing time allocation = 15% of development hours.
+                 * DEVELOPMENT WORK: Dynamically split based on roster availability:
+                   - If S3, S2, and S1 developers are all present: S3 Developer does 20% of development, S2 Developer does 30%, S1 Developer does 50%.
+                   - If S3 is missing but S2 and S1 are present: S2 Developer does 30%, S1 Developer does 70%.
+                   - If S2 is missing but S3 and S1 are present: S3 Developer does 30%, S1 Developer does 70%.
+                   - If S1 is missing but S3 and S2 are present: S3 Developer does 40%, S2 Developer does 60%.
+                   - Otherwise: 100% goes to the single present developer.
+                 * TESTING & DEPLOYMENT WORK:
+                   - Internal testing time allocation = 20% of development hours.
+                   - Client testing time allocation = 10% of development hours.
+                   - Testing is prioritized to: S2 Developer -> S1 Developer -> S3 Developer.
                    - Deployment time allocation = 10% of development hours.
-                 * SENIOR OTHER: Senior developers also handle client requirements (max 16h), weekly meetings (16h), and KT (8h).
-                 * fastest_allocation: Recommend Mid-level Developer role for 100% of development hours. Senior Developer handles testing & deployment.
-                 * balanced_allocation: Recommend Mid-level Developer (50%) and Junior Developer (50%) for development. Senior Developer handles testing & deployment.
-                 * lean_allocation: Recommend Mid-level Developer (50%) and Junior Developer (50%) for development. Senior Developer handles testing & deployment.
-            2. Generate three distinct, mathematically consistent team structure options:
-               - "fastest": High parallel execution. Mid-level Developer count = 2 (split dev hours), Junior Developer count = 0. Senior Developer count = 1. PM count = 1.
-               - "balanced": Mid-level Developer count = 1 (50% dev), Junior Developer count = 1 (50% dev). Senior Developer count = 1. PM count = 1.
-               - "lean": Mid-level Developer count = 1 (50% dev), Junior Developer count = 1 (50% dev). Senior Developer count = 1. PM count = 1.
-               - Always include "Project Manager" (PM hours = 15% of total base effort: Development + Testing + Deployment + Senior Development).
-               - Always include "Risk Contingency (10%)" and "Negotiation Buffer (5%)" as separate virtual members in the members list.
+                   - Deployment & Pre-engineering are prioritized to: S3 Developer -> S2 Developer -> S1 Developer.
+                 * S3 DEVELOPER OTHER: S3 Developer handles pre-engineering (32 hours minimum) if present. Project Management is NOT needed in the team efforts estimation.
+                 * fastest_allocation, balanced_allocation, lean_allocation: Recommend development, testing, and deployment roles based on the roster availability rules above.
+            2. Generate three distinct, mathematically consistent team structure options (fastest, balanced, lean):
+               - Developer count = 1 for each present level in roster.
+               - Do NOT include Project Management in the team efforts estimation options.
+               - Do NOT include Risk Contingency and Negotiation Buffer in the members list.
 
             STRICT MATH EQUATIONS:
             - total_dev_hours = Sum of estimated hours across all modules.
-            - testing_internal_hours = total_dev_hours * 0.15
-            - testing_external_hours = total_dev_hours * 0.15
+            - testing_internal_hours = total_dev_hours * 0.20
+            - testing_external_hours = total_dev_hours * 0.10
             - deployment_hours = total_dev_hours * 0.10
-            - senior_other_hours = 16 (requirements) + 16 (meetings) + 8 (KT) = 40 hours
-            - senior_developer_hours = testing_internal_hours + testing_external_hours + deployment_hours + senior_other_hours
-            - total_base_effort = total_dev_hours + senior_developer_hours
-            - pm_hours = total_base_effort * 0.15
-            - total_efforts_estimation = total_base_effort + pm_hours
-            - risk_hours = total_efforts_estimation * 0.10
-            - negotiation_hours = total_efforts_estimation * 0.05
-            - total_project_hours = total_efforts_estimation + risk_hours + negotiation_hours
+            - pre_engineering_hours = 32.0 hours
+            - total_engineering_hours = total_dev_hours + testing_internal_hours + testing_external_hours + deployment_hours
+            - total_project_hours = pre_engineering_hours + total_engineering_hours
 
             CRITICAL RULES FOR TEAM STRUCTURE OPTIONS:
             - Use ONLY roles and experience years from the Company Roster. Format each role as `<Role Title> (<Experience Years> Yrs Exp)`.
-              NEVER include any personal name in the role field. Example: "Lead Developer (12 Yrs Exp)".
+              NEVER include any personal name in the role field. Example: "S3 Developer (12 Yrs Exp)".
             - Calibrate active_weeks for each member:
-              * Senior Developer active_weeks = (senior_hours / 40) * 0.75
-              * Mid-level Developer active_weeks = mid_hours / 40
-              * Junior Developer active_weeks = (junior_hours / 40) * 1.30
-              * PM active_weeks = pm_hours / 40
-              * Risk Contingency active_weeks = risk_hours / 40
-              * Negotiation Buffer active_weeks = negotiation_hours / 40
+              * S3 Developer active_weeks = (hours / 40)
+              * S2 Developer active_weeks = (hours / 40) * 0.75
+              * S1 Developer active_weeks = (hours / 40) * 1.30
 
             PROJECT CONTENT:
             {srs_text[:30000]}
@@ -710,11 +784,11 @@ class TeamAllocationService:
                         "total_project_hours": <float: sum of all members' count * hours_per_member>,
                         "members": [
                             {{
-                                "role": "<Role Title> (<Experience Years> Yrs Exp) — e.g. 'Lead Developer (12 Yrs Exp)'",
+                                "role": "<Role Title> (<Experience Years> Yrs Exp) — e.g. 'S3 Developer (12 Yrs Exp)'",
                                 "count": <integer >= 1>,
-                                "description": "<velocity reasoning: e.g. 'A 12 Yrs Exp Lead Developer (very fast velocity) completes their scope in 5.5 active_weeks — 2.5 weeks faster than a mid-level developer would need.'>",
+                                "description": "<velocity reasoning>",
                                 "weekly_hours": 40,
-                                "active_weeks": <float: calibrated by this role's experience — NOT the same as every other member>,
+                                "active_weeks": <float: calibrated by this role's experience>,
                                 "hours_per_member": <float: active_weeks * 40>
                             }}
                         ]
@@ -787,7 +861,7 @@ class TeamAllocationService:
                 }
                 if attempt_provider == "gemini":
                     kwargs["max_tokens"] = 8192
-                elif attempt_provider in {"ollama", "anthropic"}:
+                elif attempt_provider in {"anthropic"}:
                     kwargs["max_tokens"] = 4096
                 else:
                     kwargs["response_format"] = {"type": "json_object"}
@@ -897,12 +971,9 @@ class TeamAllocationService:
     @staticmethod
     def _default_roster() -> list[CompanyResource]:
         return [
-            CompanyResource(name="Resource A", role="Lead Full Stack Developer", experience_years=12.0),
-            CompanyResource(name="Resource B", role="Senior Full Stack Developer", experience_years=8.0),
-            CompanyResource(name="Resource C", role="Junior Full Stack Developer", experience_years=2.0),
-            CompanyResource(name="Resource D", role="QA Tester", experience_years=4.0),
-            CompanyResource(name="Resource E", role="Project Manager", experience_years=10.0),
-            CompanyResource(name="Resource F", role="DevOps Engineer", experience_years=7.0),
+            CompanyResource(name="Resource A", role="S3 Developer", experience_years=12.0),
+            CompanyResource(name="Resource B", role="S2 Developer", experience_years=8.0),
+            CompanyResource(name="Resource C", role="S1 Developer", experience_years=2.0),
         ]
 
     def build_deterministic_team_analysis(
@@ -958,16 +1029,7 @@ class TeamAllocationService:
 
     def _validate_provider_is_ready(self, provider_config: dict[str, str]) -> None:
         provider = provider_config["provider"]
-        if provider == "ollama":
-            parsed = urlparse(provider_config["base_url"])
-            root = f"{parsed.scheme}://{parsed.netloc}"
-            try:
-                with urlopen(f"{root}/api/tags", timeout=1.5):
-                    return
-            except Exception as exc:
-                raise RuntimeError(
-                    "Ollama is not reachable. Falling back to deterministic team allocation."
-                ) from exc
+
 
         if not provider_config.get("api_key"):
             raise RuntimeError(
@@ -977,11 +1039,11 @@ class TeamAllocationService:
     @staticmethod
     def _classify_workstream(role: str) -> str:
         lowered = (role or "").strip().lower()
-        if any(token in lowered for token in ["qa", "tester", "test engineer", "quality assurance"]):
+        if any(token in lowered for token in ["qa", "tester", "test engineer", "quality assurance", "testing"]):
             return "testing"
-        if any(token in lowered for token in ["project manager", "program manager", "scrum master", "business analyst", "product manager"]):
+        if any(token in lowered for token in ["project manager", "program manager", "scrum master", "business analyst", "product manager", "project management"]):
             return "management"
-        if any(token in lowered for token in ["devops", "platform engineer", "release engineer", "site reliability", "sre", "cloud engineer"]):
+        if any(token in lowered for token in ["devops", "platform engineer", "release engineer", "site reliability", "sre", "cloud engineer", "deployment"]):
             return "deployment"
         if any(token in lowered for token in ["ui/ux", "ux designer", "ui designer", "product designer"]):
             return "design"
@@ -1159,25 +1221,67 @@ class TeamAllocationService:
         roster: list[CompanyResource],
         option_key: str,
     ) -> list[FeatureAllocation]:
-        # Find resources matching brackets
-        res_senior = self._find_resource_for_bracket_static(roster, ["developer", "engineer", "architect"], min_exp=10.01, fallback_role="Lead Full Stack Developer", fallback_exp=12.0)
-        res_mid = self._find_resource_for_bracket_static(roster, ["developer", "engineer", "architect"], min_exp=5.0, max_exp=10.0, fallback_role="Senior Full Stack Developer", fallback_exp=8.0)
-        res_junior = self._find_resource_for_bracket_static(roster, ["developer", "engineer", "architect"], min_exp=0.0, max_exp=4.99, fallback_role="Junior Full Stack Developer", fallback_exp=2.0)
+        # Determine presence
+        has_s3 = any(
+            any(kw in (r.role or "").lower() for kw in ["s3", "lead", "architect"]) or r.experience_years >= 10.0
+            for r in roster
+        )
+        has_s2 = any(
+            any(kw in (r.role or "").lower() for kw in ["s2", "senior"]) or (5.0 <= r.experience_years < 10.0)
+            for r in roster
+        )
+        has_s1 = any(
+            (not any(kw in (r.role or "").lower() for kw in ["s3", "lead", "architect", "s2", "senior"]) and r.experience_years < 5.0) or any(kw in (r.role or "").lower() for kw in ["s1", "junior"])
+            for r in roster
+        )
+
+        s3_res = self._find_developer_by_level(roster, "s3") or CompanyResource(name="S3 Developer", role="S3 Developer", experience_years=12.0)
+        s2_res = self._find_developer_by_level(roster, "s2") or CompanyResource(name="S2 Developer", role="S2 Developer", experience_years=8.0)
+        s1_res = self._find_developer_by_level(roster, "s1") or CompanyResource(name="S1 Developer", role="S1 Developer", experience_years=2.0)
+
+        # Decide pre-engineering / deployment resource: priority S3 -> S2 -> S1
+        if has_s3:
+            pre_dep_res = s3_res
+        elif has_s2:
+            pre_dep_res = s2_res
+        else:
+            pre_dep_res = s1_res
+
+        # Decide testing resource: priority S2 -> S1 -> S3
+        if has_s2:
+            testing_res = s2_res
+        elif has_s1:
+            testing_res = s1_res
+        else:
+            testing_res = s3_res
+
+        # Determine development splits — use list of tuples (resource, pct) to avoid unhashable key issue
+        dev_split: list[tuple] = []
+        if has_s3 and has_s2 and has_s1:
+            dev_split = [(s3_res, 0.20), (s2_res, 0.30), (s1_res, 0.50)]
+        elif has_s2 and has_s1:
+            dev_split = [(s2_res, 0.30), (s1_res, 0.70)]
+        elif has_s3 and has_s1:
+            dev_split = [(s3_res, 0.30), (s1_res, 0.70)]
+        elif has_s3 and has_s2:
+            dev_split = [(s3_res, 0.40), (s2_res, 0.60)]
+        elif has_s3:
+            dev_split = [(s3_res, 1.0)]
+        elif has_s2:
+            dev_split = [(s2_res, 1.0)]
+        else:
+            dev_split = [(s1_res, 1.0)]
 
         allocs = []
-        if option_key == "fastest":
-            allocs.append(self._feature_allocation(res_mid, round(estimated_hours, 2), f"Owns development for {module_name}."))
-        elif option_key == "lean":
-            allocs.append(self._feature_allocation(res_mid, round(estimated_hours * 0.5, 2), f"Develops core logic for {module_name}."))
-            allocs.append(self._feature_allocation(res_junior, round(estimated_hours * 0.5, 2), f"Assists with development for {module_name}."))
-        else: # balanced
-            allocs.append(self._feature_allocation(res_mid, round(estimated_hours * 0.5, 2), f"Develops complex parts of {module_name}."))
-            allocs.append(self._feature_allocation(res_junior, round(estimated_hours * 0.5, 2), f"Develops standard parts of {module_name}."))
+        for res, pct in dev_split:
+            if pct > 0:
+                allocs.append(self._feature_allocation(res, round(estimated_hours * pct, 2), f"Develops logic for {module_name}."))
 
-        # Senior testing and deployment allocations
-        allocs.append(self._feature_allocation(res_senior, round(estimated_hours * 0.15, 2), f"Internal testing for {module_name}."))
-        allocs.append(self._feature_allocation(res_senior, round(estimated_hours * 0.15, 2), f"External testing for {module_name}."))
-        allocs.append(self._feature_allocation(res_senior, round(estimated_hours * 0.10, 2), f"Deployment activities for {module_name}."))
+        # Testing (Internal & External)
+        allocs.append(self._feature_allocation(testing_res, round(estimated_hours * 0.20, 2), f"Internal testing for {module_name}."))
+        allocs.append(self._feature_allocation(testing_res, round(estimated_hours * 0.10, 2), f"External testing for {module_name}."))
+        # Deployment
+        allocs.append(self._feature_allocation(pre_dep_res, round(estimated_hours * 0.10, 2), f"Deployment activities for {module_name}."))
 
         return allocs
 
@@ -1321,9 +1425,14 @@ class TeamAllocationService:
             resource for resource in roster
             if self._classify_workstream(resource.role) == workstream
         ]
-        if not candidates:
-            return None
-        return max(candidates, key=lambda resource: resource.experience_years)
+        if candidates:
+            return max(candidates, key=lambda resource: resource.experience_years)
+            
+        # Fallback if roster is not empty: pick the highest experience developer for support tasks
+        if roster:
+            return max(roster, key=lambda resource: resource.experience_years)
+            
+        return None
 
     @staticmethod
     def _baseline_scope_hours(

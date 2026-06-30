@@ -1,12 +1,532 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowRight, FileText, Loader2, Gauge, RefreshCw, AlertCircle, CheckCircle, Type } from "lucide-react";
+import { ArrowRight, FileText, Loader2, Gauge, RefreshCw, AlertCircle, CheckCircle, Type, Users, Plus, Trash2, Save, X } from "lucide-react";
 
 
 import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { useWorkflow } from "@/context/WorkflowContext";
-import { getOllamaModels, getRateLimitStatus } from "@/lib/platformApi";
+import { getRateLimitStatus } from "@/lib/platformApi";
+
+// ─── Shared Company Roster Storage ───────────────────────────────────────────
+const SHARED_PROFILES_KEY = "scopesense-company-profiles-v1";
+const ACTIVE_PROFILE_ID_KEY = "scopesense-active-profile-id-v1";
+
+const DEFAULT_PROFILES = [
+  {
+    id: "profile-default-inr",
+    name: "Default INR Profile",
+    currency: "INR",
+    members: [
+      { name: "Resource A", role: "S3 Developer", experience_years: 12, hourly_rate_override: null },
+      { name: "Resource B", role: "S2 Developer", experience_years: 8,  hourly_rate_override: null },
+      { name: "Resource C", role: "S1 Developer", experience_years: 2,  hourly_rate_override: null },
+    ]
+  },
+  {
+    id: "profile-default-usd",
+    name: "Default USD Profile",
+    currency: "USD",
+    members: [
+      { name: "Resource A (US)", role: "S3 Developer", experience_years: 12, hourly_rate_override: null },
+      { name: "Resource B (US)", role: "S2 Developer", experience_years: 8,  hourly_rate_override: null },
+      { name: "Resource C (US)", role: "S1 Developer", experience_years: 2,  hourly_rate_override: null },
+    ]
+  }
+];
+
+const CURRENCY_SYMBOLS = { USD: "$", INR: "\u20b9", EUR: "\u20ac", GBP: "\u00a3", JPY: "\u00a5" };
+const getCurrencySymbol = (c) => CURRENCY_SYMBOLS[c] || "$";
+
+const COMPANY_ROLES = [
+  "S1 Developer",
+  "S2 Developer",
+  "S3 Developer",
+  "Junior Developer",
+  "Mid-Level Developer",
+  "Senior Developer",
+  "Lead Developer",
+  "Frontend Developer",
+  "Backend Developer",
+  "Full Stack Developer",
+  "Mobile Developer",
+  "iOS Developer",
+  "Android Developer",
+  "UI/UX Designer",
+  "Product Designer",
+  "QA Engineer",
+  "Test Engineer",
+  "Automation Engineer",
+  "DevOps Engineer",
+  "Cloud Engineer",
+  "Site Reliability Engineer",
+  "Data Engineer",
+  "Data Scientist",
+  "Machine Learning Engineer",
+  "Business Analyst",
+  "Product Manager",
+  "Project Manager",
+  "Scrum Master",
+  "Tech Lead",
+  "Engineering Manager",
+  "Solutions Architect",
+  "Database Administrator",
+  "Security Engineer",
+  "Technical Writer",
+];
+
+const loadSharedProfiles = () => {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(SHARED_PROFILES_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return [];
+};
+
+const saveSharedProfiles = (profiles) => {
+  try {
+    window.localStorage.setItem(SHARED_PROFILES_KEY, JSON.stringify(profiles));
+  } catch (e) {}
+};
+
+const loadActiveProfileId = (profiles) => {
+  try {
+    const activeId = typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_PROFILE_ID_KEY) : null;
+    if (activeId !== null) {
+      if (activeId === "") return "";
+      if (profiles.some(p => p.id === activeId)) return activeId;
+    }
+  } catch (e) {}
+  return profiles[0]?.id || "";
+};
+
+const saveActiveProfileId = (id) => {
+  try {
+    window.localStorage.setItem(ACTIVE_PROFILE_ID_KEY, id);
+  } catch (e) {}
+};
+
+const calcRate = (exp) => {
+  const y = Number(exp) || 0;
+  if (y >= 10) return 50;
+  if (y >= 5)  return 45;
+  return 40;
+};
+
+// ─── Edit Roster Modal ────────────────────────────────────────────────────────
+function EditRosterModal({ onClose }) {
+  const [profiles, setProfiles] = useState(() => loadSharedProfiles());
+  const [activeProfileId, setActiveProfileId] = useState(() => loadActiveProfileId(profiles));
+
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState(COMPANY_ROLES[0]);
+  const [newExp, setNewExp]   = useState(5);
+  const [newRate, setNewRate] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  // Profile creation sub-form state
+  const [showAddProfileForm, setShowAddProfileForm] = useState(false);
+  const [newProfileName, setNewProfileName] = useState("");
+  const [newProfileCurrency, setNewProfileCurrency] = useState("INR");
+
+  const activeProfile = profiles.find((p) => p.id === activeProfileId);
+  const roster = activeProfile?.members || [];
+  const currency = activeProfile?.currency || "INR";
+
+  const updateMember = (index, field, value) => {
+    setProfiles((prev) => {
+      const next = prev.map((p) => {
+        if (p.id === activeProfileId) {
+          const nextMembers = [...p.members];
+          const m = { ...nextMembers[index] };
+          if (field === "name") m.name = value;
+          else if (field === "role") m.role = value;
+          else if (field === "experience_years") m.experience_years = Math.max(0, Number(value) || 0);
+          else if (field === "hourly_rate_override") m.hourly_rate_override = value === "" ? null : Math.max(0, Number(value) || 0);
+          nextMembers[index] = m;
+          return { ...p, members: nextMembers };
+        }
+        return p;
+      });
+      return next;
+    });
+    setSaved(false);
+  };
+
+  const addMember = () => {
+    if (!newName.trim()) return;
+    setProfiles((prev) => {
+      const next = prev.map((p) => {
+        if (p.id === activeProfileId) {
+          return {
+            ...p,
+            members: [
+              ...p.members,
+              {
+                name: newName.trim(),
+                role: newRole || COMPANY_ROLES[0],
+                experience_years: Number(newExp) || 0,
+                hourly_rate_override: newRate !== "" ? Number(newRate) : null,
+              }
+            ]
+          };
+        }
+        return p;
+      });
+      return next;
+    });
+    setNewName(""); setNewRole(COMPANY_ROLES[0]); setNewExp(5); setNewRate("");
+    setSaved(false);
+  };
+
+  const removeMember = (index) => {
+    setProfiles((prev) => {
+      const next = prev.map((p) => {
+        if (p.id === activeProfileId) {
+          return {
+            ...p,
+            members: p.members.filter((_, i) => i !== index)
+          };
+        }
+        return p;
+      });
+      return next;
+    });
+    setSaved(false);
+  };
+
+  const addProfile = () => {
+    if (!newProfileName.trim()) return;
+    const newId = "profile-" + Date.now();
+    const newProf = {
+      id: newId,
+      name: newProfileName.trim(),
+      currency: newProfileCurrency,
+      members: []
+    };
+    const nextProfiles = [...profiles, newProf];
+    setProfiles(nextProfiles);
+    setActiveProfileId(newId);
+    setNewProfileName("");
+    setShowAddProfileForm(false);
+    setSaved(false);
+  };
+
+  const deleteProfile = () => {
+    if (profiles.length <= 1) return;
+    const remaining = profiles.filter((p) => p.id !== activeProfileId);
+    setProfiles(remaining);
+    setActiveProfileId(remaining[0].id);
+    setSaved(false);
+  };
+
+  const handleSave = () => {
+    saveSharedProfiles(profiles);
+    saveActiveProfileId(activeProfileId);
+    setSaved(true);
+    setTimeout(() => onClose(), 800);
+  };
+
+  const sym = getCurrencySymbol(currency);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,28,22,0.88)", backdropFilter: "blur(8px)", padding: "1rem" }}>
+      <div style={{ width: "100%", maxWidth: "880px", background: "#EBEBEB", border: "1px solid #0A1C16", clipPath: "polygon(0 0, 100% 0, 100% 100%, 28px 100%, 0 calc(100% - 28px))", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+
+        {/* Header */}
+        <div style={{ padding: "1.75rem 2rem", borderBottom: "1px solid #0A1C16", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexShrink: 0 }}>
+          <div>
+            <p style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.15em", color: "rgba(10,28,22,0.5)", marginBottom: "0.5rem" }}>Company Resource Roster</p>
+            <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 300, fontSize: "1.8rem", letterSpacing: "-0.02em", color: "#0A1C16", lineHeight: 1.1 }}>
+              Edit <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontWeight: 400, opacity: 0.6 }}>your team roster</em>
+            </h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.6)", marginTop: "0.5rem", lineHeight: 1.6, fontWeight: 300 }}>
+              Saved roster will be used automatically when generating team allocation.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexShrink: 0 }}>
+            {/* Profile selector and Management */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", border: "1px solid rgba(10,28,22,0.3)", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <span style={{ opacity: 0.5 }}>Company / Project:</span>
+                <select 
+                  value={activeProfileId} 
+                  onChange={(e) => {
+                    setActiveProfileId(e.target.value);
+                    setSaved(false);
+                  }} 
+                  style={{ background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-display)", fontWeight: 700, cursor: "pointer", color: "#0A1C16" }}
+                >
+                  {profiles.length === 0 ? (
+                    <option value="">No Profiles Created</option>
+                  ) : (
+                    <>
+                      <option value="">-- Select Profile --</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name} ({p.currency})</option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Add profile button */}
+              <button 
+                onClick={() => setShowAddProfileForm(!showAddProfileForm)} 
+                style={{ padding: "0.45rem 0.75rem", border: "1px solid rgba(10,28,22,0.3)", background: "transparent", display: "flex", alignItems: "center", gap: "0.25rem", cursor: "pointer", fontSize: "0.7rem", fontFamily: "var(--font-display)", textTransform: "uppercase", fontWeight: 700, color: "#0A1C16" }}
+                title="Create a new Company or Project Profile"
+              >
+                <Plus size={12} /> New Profile
+              </button>
+
+              {/* Delete profile button */}
+              {profiles.length > 1 && (
+                <button 
+                  onClick={deleteProfile} 
+                  style={{ padding: "0.45rem", border: "1px solid rgba(220,38,38,0.3)", background: "transparent", display: "flex", alignItems: "center", cursor: "pointer", color: "#991b1b" }}
+                  title="Delete current profile"
+                >
+                  <Trash2 size={12} />
+                </button>
+              )}
+            </div>
+            <button onClick={onClose} style={{ padding: "0.5rem", border: "1px solid rgba(10,28,22,0.3)", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Add Profile Popover/Form */}
+        {showAddProfileForm && (
+          <div style={{ padding: "1rem 2rem", background: "rgba(196,215,201,0.25)", borderBottom: "1px solid rgba(10,28,22,0.15)", display: "flex", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "0.8rem", fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.08em", color: "#0A1C16", fontWeight: 700 }}>New Profile:</span>
+            <input 
+              type="text" 
+              placeholder="e.g. Axcend or Project X" 
+              value={newProfileName} 
+              onChange={(e) => setNewProfileName(e.target.value)} 
+              style={{ flex: 1, minWidth: "150px", border: "1px solid rgba(10,28,22,0.25)", padding: "0.4rem 0.6rem", fontSize: "0.8rem", outline: "none", background: "#fff", color: "#0A1C16" }}
+            />
+            <select 
+              value={newProfileCurrency} 
+              onChange={(e) => setNewProfileCurrency(e.target.value)} 
+              style={{ border: "1px solid rgba(10,28,22,0.25)", padding: "0.4rem 0.6rem", fontSize: "0.8rem", background: "#fff", outline: "none", color: "#0A1C16" }}
+            >
+              <option value="INR">INR (₹)</option>
+              <option value="USD">USD ($)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="JPY">JPY (¥)</option>
+            </select>
+            <button 
+              onClick={addProfile} 
+              disabled={!newProfileName.trim()} 
+              style={{ padding: "0.45rem 1rem", background: newProfileName.trim() ? "#0A1C16" : "rgba(10,28,22,0.2)", color: newProfileName.trim() ? "#EBEBEB" : "rgba(10,28,22,0.4)", border: "none", cursor: newProfileName.trim() ? "pointer" : "not-allowed", fontSize: "0.75rem", fontFamily: "var(--font-display)", textTransform: "uppercase", fontWeight: 600 }}
+            >
+              Create
+            </button>
+            <button 
+              onClick={() => setShowAddProfileForm(false)} 
+              style={{ padding: "0.45rem 1rem", border: "1px solid rgba(10,28,22,0.2)", background: "transparent", cursor: "pointer", fontSize: "0.75rem", fontFamily: "var(--font-display)", textTransform: "uppercase", color: "#0A1C16" }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* Table */}
+        {showAddProfileForm ? (
+          <div style={{ flex: 1, padding: "3rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", textAlign: "center", background: "rgba(196,215,201,0.02)" }}>
+            <div style={{ width: "64px", height: "64px", border: "1px dashed rgba(10,28,22,0.25)", display: "flex", alignItems: "center", justifyContent: "center", clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)", color: "rgba(10,28,22,0.4)" }}>
+              <Plus size={24} />
+            </div>
+            <div>
+              <p style={{ fontFamily: "var(--font-display)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#0A1C16", fontWeight: 700, marginBottom: "0.35rem" }}>
+                Creating New Profile
+              </p>
+              <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.82rem", color: "rgba(10,28,22,0.55)", maxWidth: "380px", lineHeight: 1.5 }}>
+                Enter a profile name and select a currency above, then click <strong>Create</strong> to initialize the profile and start adding developers.
+              </p>
+            </div>
+          </div>
+        ) : !activeProfile ? (
+          <div style={{ flex: 1, padding: "3rem 2rem", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1rem", textAlign: "center", background: "rgba(196,215,201,0.02)" }}>
+            <div style={{ width: "64px", height: "64px", border: "1px dashed rgba(10,28,22,0.25)", display: "flex", alignItems: "center", justifyContent: "center", clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)", color: "rgba(10,28,22,0.4)" }}>
+              <Users size={24} />
+            </div>
+            <div>
+              <p style={{ fontFamily: "var(--font-display)", fontSize: "0.8rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#0A1C16", fontWeight: 700, marginBottom: "0.35rem" }}>
+                No Profile Selected
+              </p>
+              <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.82rem", color: "rgba(10,28,22,0.55)", maxWidth: "380px", lineHeight: 1.5 }}>
+                Please select a Company/Project profile from the dropdown above, or click <strong>New Profile</strong> to create one.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem 2rem" }}>
+            {/* Column headers */}
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center", padding: "0.5rem 0.75rem", background: "rgba(196,215,201,0.25)", borderBottom: "1px solid rgba(10,28,22,0.15)", marginBottom: "0.25rem" }}>
+              {["Name", "Role", "Exp (Yrs)", "Hourly Pay", ""].map((h, i) => (
+                <div key={i} style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(10,28,22,0.5)" }}>{h}</div>
+              ))}
+            </div>
+
+            {/* Existing members */}
+            <div style={{ border: "1px solid rgba(10,28,22,0.12)", borderTop: "none" }}>
+              {roster.length === 0 && (
+                <div style={{ padding: "2rem", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.45)" }}>
+                  No roster members yet in this profile. Add one below.
+                </div>
+              )}
+              {roster.map((member, index) => (
+                <div
+                  key={index}
+                  style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center", padding: "0.6rem 0.75rem", borderBottom: "1px solid rgba(10,28,22,0.07)", background: index % 2 === 0 ? "transparent" : "rgba(196,215,201,0.04)" }}
+                >
+                  <input
+                    type="text"
+                    value={member.name}
+                    onChange={(e) => updateMember(index, "name", e.target.value)}
+                    style={{ width: "100%", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.6rem", background: "transparent", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16", fontWeight: 500 }}
+                    placeholder="Member name"
+                  />
+                  <select
+                    value={member.role}
+                    onChange={(e) => updateMember(index, "role", e.target.value)}
+                    style={{ width: "100%", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.6rem", background: "transparent", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.8)", cursor: "pointer" }}
+                  >
+                    {!COMPANY_ROLES.includes(member.role) && (
+                      <option value={member.role}>{member.role}</option>
+                    )}
+                    {COMPANY_ROLES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <input
+                      type="number"
+                      min="0"
+                      max="50"
+                      step="0.5"
+                      value={member.experience_years}
+                      onChange={(e) => updateMember(index, "experience_years", e.target.value)}
+                      style={{ width: "52px", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.35rem", background: "transparent", outline: "none", fontFamily: "monospace", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>yrs</span>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "rgba(10,28,22,0.55)" }}>{sym}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={member.hourly_rate_override != null ? member.hourly_rate_override : calcRate(member.experience_years)}
+                      onChange={(e) => updateMember(index, "hourly_rate_override", e.target.value)}
+                      style={{ width: "62px", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.35rem", background: "transparent", outline: "none", fontFamily: "monospace", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16", fontWeight: 600 }}
+                      title="Hourly pay — edit to override computed rate"
+                    />
+                    <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>/hr</span>
+                  </div>
+                  <button
+                    onClick={() => removeMember(index)}
+                    style={{ padding: "0.4rem", border: "1px solid rgba(220,38,38,0.25)", background: "transparent", color: "#991b1b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}
+                    title="Remove member"
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.1)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Add new member row */}
+            <div style={{ marginTop: "1.25rem", border: "1px dashed rgba(10,28,22,0.25)", padding: "1rem", background: "rgba(196,215,201,0.06)" }}>
+              <p style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(10,28,22,0.45)", marginBottom: "0.75rem" }}>Add New Member to Profile</p>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center" }}>
+                <input
+                  type="text"
+                  placeholder="Name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addMember()}
+                  style={{ width: "100%", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.6rem", background: "#fff", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16" }}
+                />
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  style={{ width: "100%", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.6rem", background: "#fff", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16", cursor: "pointer" }}
+                >
+                  {COMPANY_ROLES.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="0.5"
+                    value={newExp}
+                    onChange={(e) => setNewExp(e.target.value)}
+                    style={{ width: "52px", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.35rem", background: "#fff", outline: "none", fontFamily: "monospace", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>yrs</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: "0.8rem", color: "rgba(10,28,22,0.55)" }}>{sym}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder={String(calcRate(newExp))}
+                    value={newRate}
+                    onChange={(e) => setNewRate(e.target.value)}
+                    style={{ width: "62px", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.35rem", background: "#fff", outline: "none", fontFamily: "monospace", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>/hr</span>
+                </div>
+                <button
+                  onClick={addMember}
+                  disabled={!newName.trim()}
+                  style={{ padding: "0.5rem 1rem", border: "1px solid #0A1C16", background: newName.trim() ? "#0A1C16" : "transparent", color: newName.trim() ? "#EBEBEB" : "rgba(10,28,22,0.35)", cursor: newName.trim() ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "0.35rem", fontFamily: "var(--font-display)", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em", transition: "all 0.2s ease", whiteSpace: "nowrap" }}
+                >
+                  <Plus size={14} /> Add
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ padding: "1rem 2rem", borderTop: "1px solid rgba(10,28,22,0.15)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, background: "rgba(196,215,201,0.08)" }}>
+          <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.78rem", color: "rgba(10,28,22,0.5)", fontWeight: 300 }}>
+            {roster.length} member{roster.length !== 1 ? "s" : ""} in profile · Saved to device storage
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              onClick={onClose}
+              style={{ padding: "0.6rem 1.25rem", border: "1px solid rgba(10,28,22,0.3)", background: "transparent", fontFamily: "var(--font-display)", fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", color: "rgba(10,28,22,0.7)", transition: "all 0.2s ease" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              style={{ padding: "0.6rem 1.5rem", border: "1px solid #0A1C16", background: saved ? "#16a34a" : "#0A1C16", color: "#EBEBEB", fontFamily: "var(--font-display)", fontSize: "0.85rem", textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.5rem", transition: "all 0.3s ease", clipPath: "polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px))" }}
+            >
+              <Save size={15} />
+              {saved ? "Saved ✓" : "Save Roster"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const PROVIDER_MODELS = {
   openai_custom: [
@@ -62,9 +582,9 @@ const formatCount = (value) => {
 };
 
 const getRateLimitEngineId = (selectedEngine) => {
-  if (selectedEngine === "gemini" || selectedEngine === "ollama") return selectedEngine;
+  if (selectedEngine === "gemini") return selectedEngine;
   if (selectedEngine && typeof selectedEngine === "object") {
-    if (selectedEngine.provider === "gemini" || selectedEngine.provider === "ollama") {
+    if (selectedEngine.provider === "gemini") {
       return selectedEngine.provider;
     }
   }
@@ -90,6 +610,7 @@ export default function InputPage() {
   const [textValue, setTextValue] = useState(rawInput);
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [showRosterModal, setShowRosterModal] = useState(false);
 
   const [customProvider, setCustomProvider] = useState("openai_custom");
   const [customModelDropdown, setCustomModelDropdown] = useState("gpt-4o");
@@ -97,10 +618,6 @@ export default function InputPage() {
   const [customApiKey, setCustomApiKey] = useState("");
   const [customBaseUrl, setCustomBaseUrl] = useState("");
 
-  const [ollamaModels, setOllamaModels] = useState([]);
-  const [selectedOllamaModel, setSelectedOllamaModel] = useState("mistral");
-  const [isFetchingOllama, setIsFetchingOllama] = useState(false);
-  const [ollamaError, setOllamaError] = useState("");
   const [rateLimitStatus, setRateLimitStatus] = useState(null);
   const [isFetchingRateLimit, setIsFetchingRateLimit] = useState(false);
   const [rateLimitError, setRateLimitError] = useState("");
@@ -143,7 +660,6 @@ export default function InputPage() {
   const selectedModelLabel = (() => {
     if (selectedEngine === "openai") return "Groq / LLaMA 4";
     if (selectedEngine === "gemini") return "Gemini Flash-Lite";
-    if (selectedEngine === "ollama") return `Ollama (Local: ${selectedOllamaModel})`;
     
     const provider = typeof selectedEngine === "object" ? selectedEngine.provider : customProvider;
     const model = typeof selectedEngine === "object" ? selectedEngine.model : (customModelDropdown === "other" ? customModelName : customModelDropdown);
@@ -215,50 +731,11 @@ export default function InputPage() {
     }
   }, [customProvider]);
 
-  useEffect(() => {
-    const isOllamaSelected = selectedEngine === "ollama" || (selectedEngine && selectedEngine.provider === "ollama");
-    if (isOllamaSelected) {
-      setIsFetchingOllama(true);
-      setOllamaError("");
-      getOllamaModels()
-        .then((res) => {
-          if (res && res.status === "ok") {
-            setOllamaModels(res.models || []);
-            if (res.models && res.models.length > 0) {
-              const currentModel = typeof selectedEngine === "object" ? selectedEngine.model : selectedOllamaModel;
-              const exists = res.models.includes(currentModel);
-              if (exists) {
-                setSelectedOllamaModel(currentModel);
-              } else if (res.models.includes("mistral")) {
-                setSelectedOllamaModel("mistral");
-              } else {
-                setSelectedOllamaModel(res.models[0]);
-              }
-            } else {
-              setOllamaError("No pulled Ollama models were found. Please run 'ollama pull mistral' (or another model) in your terminal.");
-            }
-          } else {
-            setOllamaError(res?.message || "Ollama is not running. Please start Ollama locally ('ollama serve') and verify it works.");
-          }
-        })
-        .catch((err) => {
-          setOllamaError("Could not connect to Ollama. Make sure Ollama is running locally ('ollama serve') on port 11434.");
-        })
-        .finally(() => {
-          setIsFetchingOllama(false);
-        });
-    }
-  }, [selectedEngine]);
+
 
   useEffect(() => {
     if (selectedEngine && typeof selectedEngine === "object") {
       const provider = selectedEngine.provider || "openai";
-      if (provider === "ollama") {
-        if (selectedEngine.model) {
-          setSelectedOllamaModel(selectedEngine.model);
-        }
-        return;
-      }
       
       let uiProvider = provider;
       if (provider === "openai") {
@@ -308,12 +785,7 @@ export default function InputPage() {
 
   const handleSubmit = () => {
     let engineConfig = selectedEngine;
-    if (selectedEngine === "ollama" || (selectedEngine && selectedEngine.provider === "ollama")) {
-      engineConfig = {
-        provider: "ollama",
-        model: selectedOllamaModel,
-      };
-    } else if (selectedEngine === "custom") {
+    if (selectedEngine === "custom") {
       const backendProvider = customProvider === "anthropic" ? "anthropic" : "openai";
       engineConfig = {
         provider: backendProvider,
@@ -409,6 +881,8 @@ export default function InputPage() {
         </div>
       </section>
 
+      {showRosterModal && <EditRosterModal onClose={() => setShowRosterModal(false)} />}
+
       <div
         style={{
           borderBottom: "1px solid rgba(10,28,22,0.12)",
@@ -429,17 +903,12 @@ export default function InputPage() {
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
             {[
               { id: "openai", label: "Groq / LLaMA 4" },
-              { id: "gemini", label: "Gemini Flash-Lite" },
-              { id: "ollama", label: "Ollama (Local)" },
               { id: "custom", label: "⚙️ Custom Agentic AI" }
             ].map((engine) => {
-              const isOllamaActive = selectedEngine === "ollama" || (selectedEngine && selectedEngine.provider === "ollama");
-              const isCustomActive = (typeof selectedEngine === "object" && selectedEngine.provider !== "ollama") || selectedEngine === "custom";
+              const isCustomActive = typeof selectedEngine === "object" || selectedEngine === "custom";
               
               let isActive = false;
-              if (engine.id === "ollama") {
-                isActive = isOllamaActive;
-              } else if (engine.id === "custom") {
+              if (engine.id === "custom") {
                 isActive = isCustomActive;
               } else {
                 isActive = selectedEngine === engine.id;
@@ -466,6 +935,34 @@ export default function InputPage() {
             })}
           </div>
         </div>
+
+        {/* ── Edit Company Roster Button ── */}
+        <button
+          onClick={() => setShowRosterModal(true)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.5rem",
+            background: "rgba(10,28,22,0.08)",
+            border: "1px solid rgba(10,28,22,0.35)",
+            padding: "0.4rem 1rem",
+            fontFamily: "var(--font-display)",
+            fontSize: "0.78rem",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            color: "#0A1C16",
+            cursor: "pointer",
+            transition: "all 0.2s ease",
+            whiteSpace: "nowrap",
+            borderRadius: "2px",
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "#0A1C16"; e.currentTarget.style.color = "#EBEBEB"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(10,28,22,0.08)"; e.currentTarget.style.color = "#0A1C16"; }}
+          title="Add or edit your company resource roster"
+        >
+          <Users size={14} />
+          Edit Company Roster
+        </button>
 
         {/* ── API Rate-Limit Widget ── */}
         <div style={{
@@ -608,117 +1105,7 @@ export default function InputPage() {
         </div>
       </div>
 
-      {(selectedEngine === "ollama" || (selectedEngine && selectedEngine.provider === "ollama")) && (
-        <div
-          style={{
-            background: "rgba(142, 196, 160, 0.15)",
-            borderBottom: "1px solid rgba(10,28,22,0.12)",
-            padding: "1rem clamp(1.5rem, 5vw, 5rem)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "0.5rem",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1.5rem", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem", minWidth: "250px" }}>
-              <label style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#0A1C16", fontWeight: 600 }}>
-                Ollama Model Selection
-              </label>
-              {isFetchingOllama ? (
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", height: "34px" }}>
-                  <Loader2 size={16} className="animate-spin" style={{ color: "#0A1C16" }} />
-                  <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.8rem", color: "rgba(10,28,22,0.6)" }}>
-                    Detecting local Ollama models...
-                  </span>
-                </div>
-              ) : ollamaError ? (
-                <select
-                  disabled
-                  style={{
-                    background: "#EBEBEB",
-                    border: "1px solid rgba(220,38,38,0.3)",
-                    padding: "0.4rem 0.75rem",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "0.8rem",
-                    color: "#991b1b",
-                    borderRadius: "2px",
-                    outline: "none",
-                    cursor: "not-allowed",
-                    width: "100%",
-                  }}
-                >
-                  <option>Ollama Offline / No Models</option>
-                </select>
-              ) : (
-                <select
-                  value={selectedOllamaModel}
-                  onChange={(e) => setSelectedOllamaModel(e.target.value)}
-                  style={{
-                    background: "#F5F3EE",
-                    border: "1px solid #0A1C16",
-                    padding: "0.4rem 0.75rem",
-                    fontFamily: "var(--font-sans)",
-                    fontSize: "0.8rem",
-                    color: "#0A1C16",
-                    borderRadius: "2px",
-                    outline: "none",
-                    cursor: "pointer",
-                    minWidth: "200px",
-                  }}
-                >
-                  {ollamaModels.map((model) => (
-                    <option key={model} value={model}>
-                      {model}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            {!isFetchingOllama && !ollamaError && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "#0A1C16", fontWeight: 500 }}>
-                  ✓ Local connection active
-                </span>
-                <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "rgba(10,28,22,0.6)" }}>
-                  Models fetched dynamically from your local Ollama library.
-                </span>
-              </div>
-            )}
-          </div>
-
-          {ollamaError && (
-            <div
-              style={{
-                background: "rgba(220,38,38,0.06)",
-                border: "1px solid rgba(220,38,38,0.15)",
-                padding: "0.75rem 1rem",
-                borderRadius: "2px",
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.75rem",
-                color: "#991b1b",
-                marginTop: "0.25rem",
-                lineHeight: 1.4,
-              }}
-            >
-              <strong>Ollama Alert:</strong> {ollamaError}
-              <div style={{ marginTop: "0.4rem", color: "rgba(10,28,22,0.7)" }}>
-                To fix this, open your terminal and run:
-                <code style={{ display: "block", background: "rgba(10,28,22,0.05)", padding: "0.25rem 0.5rem", borderRadius: "2px", margin: "0.25rem 0", fontFamily: "monospace", fontSize: "0.7rem", color: "#0A1C16" }}>
-                  ollama serve
-                </code>
-                Then download a model (e.g. Mistral) by running:
-                <code style={{ display: "block", background: "rgba(10,28,22,0.05)", padding: "0.25rem 0.5rem", borderRadius: "2px", margin: "0.25rem 0", fontFamily: "monospace", fontSize: "0.7rem", color: "#0A1C16" }}>
-                  ollama pull mistral
-                </code>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {(selectedEngine === "custom" || (typeof selectedEngine === "object" && selectedEngine.provider !== "ollama")) && (
+      {(selectedEngine === "custom" || typeof selectedEngine === "object") && (
         <div
           style={{
             background: "rgba(142, 196, 160, 0.15)",

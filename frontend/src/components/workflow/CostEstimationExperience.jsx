@@ -17,6 +17,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 import { PageIntro } from "@/components/workflow/PageIntro";
+import { AxcendCostEstimation } from "@/components/workflow/AxcendCostEstimation";
 import { useWorkflow } from "@/context/WorkflowContext";
 import {
   createCostDraftFromTeamData,
@@ -101,6 +102,7 @@ export function CostEstimationExperience() {
   const [isPmExpanded, setIsPmExpanded] = useState(false);
   const [isRiskExpanded, setIsRiskExpanded] = useState(false);
   const [isPreviewBreakdownExpanded, setIsPreviewBreakdownExpanded] = useState(false);
+  const [pricingFormat, setPricingFormat] = useState("axcend"); // "axcend" | "scopesense"
 
   useEffect(() => {
     const savedDraft = loadCostDraft();
@@ -112,7 +114,7 @@ export function CostEstimationExperience() {
           weekly_hours: member.weekly_hours || "40",
         })),
         project_management_cost: savedDraft.project_management_cost ?? "",
-        project_management_percent: savedDraft.project_management_percent ?? "15",
+        project_management_percent: savedDraft.project_management_percent ?? "10",
         risk_contingency_percent: savedDraft.risk_contingency_percent ?? "10",
         miscellaneous_costs: [],
       });
@@ -191,6 +193,16 @@ export function CostEstimationExperience() {
       setTimeout(() => setCurrencyConversionStatus(""), 4000);
     }
   }, [draft]);
+
+  const handleCurrencyChangeNoConversion = useCallback((newCurrency) => {
+    updateDraft((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        currency: newCurrency,
+      };
+    });
+  }, []);
 
   const handleDocumentUpload = async (event) => {
     const file = event.target.files?.[0];
@@ -288,7 +300,6 @@ export function CostEstimationExperience() {
             eyebrow="Phase 03 — Cost Estimation"
             title="Price the full project with a"
             titleItalic="strategic lens."
-            copy="Reuse existing team architecture or import source documents. The final export dynamically bundles all approved deliverables into a professional projection."
           />
         </div>
       </section>
@@ -371,380 +382,9 @@ export function CostEstimationExperience() {
           </ScrollReveal>
         ) : (
           <ScrollReveal variant="slide-up" delay={0}>
-          <section style={{ display: "grid", gap: "2rem", gridTemplateColumns: "1.3fr 0.7fr" }}>
-            <div className="space-y-6">
-              
-              {/* General Project Info */}
-              <div 
-                className="border border-parcelles-dark bg-parcelles-bg p-5 md:p-6 chamfer-bottom-left"
-                style={{
-                  paddingBottom: isCurrencyDropdownOpen ? "290px" : ""
-                }}
-              >
-                <div className="grid gap-8 md:grid-cols-2">
-                  <div>
-                    <p className="font-display uppercase tracking-widest text-xs opacity-60 mb-2">Project Name</p>
-                    <input
-                      value={draft.project_name}
-                      onChange={(event) => updateDraft((current) => ({ ...current, project_name: event.target.value }))}
-                      placeholder="Project name"
-                      className="w-full text-2xl font-display bg-transparent border-b border-parcelles-dark outline-none py-2"
-                    />
-                  </div>
-                  <div className="relative">
-                    <p className="font-display uppercase tracking-widest text-xs opacity-60 mb-2">Currency</p>
-                    <button
-                      type="button"
-                      onClick={() => setIsCurrencyDropdownOpen(!isCurrencyDropdownOpen)}
-                      className="w-full flex items-center justify-between gap-3 text-left font-display bg-parcelles-bg border border-parcelles-dark px-4 py-3 outline-none hover:bg-parcelles-sage/20 transition-colors chamfer-bottom-right"
-                    >
-                      <span className={`min-w-0 truncate text-base ${draft.currency ? "text-parcelles-dark" : "text-parcelles-dark/40"}`}>
-                        {draft.currency ? `${draft.currency} - ${CURRENCIES[draft.currency]}` : "Select Currency"}
-                      </span>
-                      <ChevronDown size={18} className={`shrink-0 transition-transform ${isCurrencyDropdownOpen ? "rotate-180" : ""}`} />
-                    </button>
-                    {isCurrencyDropdownOpen && (
-                      <div className="absolute left-0 top-full mt-2 z-50 max-h-[280px] w-full overflow-y-auto border border-parcelles-dark bg-parcelles-bg shadow-xl chamfer-bottom-left">
-                        {Object.entries(CURRENCIES).map(([code, name]) => (
-                          <button
-                            key={code}
-                            onClick={() => {
-                              handleCurrencyChange(code);
-                              setIsCurrencyDropdownOpen(false);
-                            }}
-                            className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors hover:bg-parcelles-sage/30 ${
-                              draft.currency === code 
-                                ? "bg-parcelles-dark text-parcelles-bg" 
-                                : "text-parcelles-dark font-display"
-                            }`}
-                          >
-                            <span className="font-display text-sm">{code}</span>
-                            <span className="font-body text-xs opacity-70 truncate">{name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {currencyConversionStatus === "loading" && (
-                      <p className="mt-2 text-xs font-display tracking-widest text-parcelles-dark/60 flex items-center gap-2">
-                        <Loader2 size={12} className="animate-spin inline-block" /> Fetching live rates &amp; converting values…
-                      </p>
-                    )}
-                    {currencyConversionStatus === "done" && (
-                      <p className="mt-2 text-xs font-display tracking-widest text-green-700">
-                        ✓ All values converted using live market rates
-                      </p>
-                    )}
-                    {currencyConversionStatus === "error" && (
-                      <p className="mt-2 text-xs font-display tracking-widest text-red-600">
-                        ⚠ Could not fetch live rates — currency label updated, values unchanged
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Role Pricing */}
-              <div className="border border-parcelles-dark bg-parcelles-bg p-5 md:p-6 chamfer-bottom-right">
-                <div 
-                  onClick={() => setIsPricingExpanded(!isPricingExpanded)}
-                  style={{ cursor: "pointer" }}
-                  className="flex flex-wrap items-center justify-between gap-3 border-b border-parcelles-dark pb-4 mb-4"
-                >
-                  <div>
-                    <p className="font-display uppercase tracking-widest text-xs opacity-60">Team Cost Inputs</p>
-                    <h2 className="text-xl font-display mt-1">Role by role pricing</h2>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    {!draft.isFromApprovedTeam && (
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          updateDraft((current) => ({ ...current, members: [...current.members, createEmptyMember()] }));
-                        }}
-                        className="px-6 py-3 border border-parcelles-dark font-display hover:bg-parcelles-dark hover:text-parcelles-bg transition-colors flex items-center gap-2 chamfer-bottom-left"
-                      >
-                        <Plus size={18} />
-                        Add Role
-                      </button>
-                    )}
-                    {isPricingExpanded ? <ChevronUp size={24} className="text-parcelles-dark" /> : <ChevronDown size={24} className="text-parcelles-dark" />}
-                  </div>
-                </div>
-
-                {isPricingExpanded && (
-                  <div>
-                    {isAnalyzingDocument ? (
-                      <CostSkeleton />
-                    ) : (
-                      <div className="space-y-8">
-                        <AnimatePresence>
-                        {draft.members.filter(m => !m.role.includes("Contingency") && !m.role.includes("Buffer")).map((member, index) => (
-                          <motion.div 
-                            layout
-                            initial={{ opacity: 0, y: 20 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
-                            transition={{ duration: 0.3, delay: index * 0.05 }}
-                            key={member.id} 
-                            className="border border-parcelles-dark bg-parcelles-sage/10 p-6 md:p-8 chamfer-bottom-left"
-                          >
-                            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-5">
-                              <div className="lg:col-span-2">
-                                <p className="font-display uppercase tracking-widest text-xs opacity-60 mb-2">Role</p>
-                                <input
-                                  value={member.role}
-                                  onChange={(event) => updateMember(member.id, "role", event.target.value)}
-                                  placeholder="Role"
-                                  className="w-full text-xl font-display bg-transparent border-b border-parcelles-dark/30 focus:border-parcelles-dark outline-none py-1 disabled:opacity-50"
-                                  disabled={draft.isFromApprovedTeam}
-                                />
-                              </div>
-                              <div>
-                                <p className="font-display uppercase tracking-widest text-xs opacity-60 mb-2">Count</p>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={member.count}
-                                  onChange={(event) => updateMember(member.id, "count", event.target.value)}
-                                  placeholder="Qty"
-                                  className="w-full text-xl font-display bg-transparent border-b border-parcelles-dark/30 focus:border-parcelles-dark outline-none py-1 disabled:opacity-50"
-                                  disabled={draft.isFromApprovedTeam}
-                                />
-                              </div>
-                              <div>
-                                <p className="font-display uppercase tracking-widest text-xs font-bold mb-2">Hourly Rate</p>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  value={member.hourly_rate}
-                                  onChange={(event) => updateMember(member.id, "hourly_rate", event.target.value)}
-                                  placeholder="Rate"
-                                  className="w-full text-xl font-display bg-parcelles-bg border border-parcelles-dark outline-none p-2 chamfer-bottom-right"
-                                />
-                              </div>
-                              <div>
-                                <p className="font-display uppercase tracking-widest text-xs opacity-60 mb-2">Total Hrs/Mbr</p>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  value={member.hours_per_member}
-                                  onChange={(event) => updateMember(member.id, "hours_per_member", event.target.value)}
-                                  placeholder="Hours"
-                                  className="w-full text-xl font-display bg-transparent border-b border-parcelles-dark/30 focus:border-parcelles-dark outline-none py-1"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="mt-8 flex gap-4">
-                              <textarea
-                                value={member.notes}
-                                onChange={(event) => updateMember(member.id, "notes", event.target.value)}
-                                rows={2}
-                                placeholder="Optional role notes..."
-                                className="flex-1 w-full p-3 border border-parcelles-dark bg-transparent outline-none font-body resize-none"
-                              />
-                              {!draft.isFromApprovedTeam && (
-                                <button
-                                  onClick={() =>
-                                    updateDraft((current) => ({
-                                      ...current,
-                                      members: current.members.filter((item) => item.id !== member.id),
-                                    }))
-                                  }
-                                  className="w-12 h-12 flex shrink-0 items-center justify-center border border-transparent hover:border-red-500 hover:text-red-500 transition-colors chamfer-bottom-right"
-                                >
-                                  <Trash2 size={20} />
-                                </button>
-                              )}
-                            </div>
-                          </motion.div>
-                        ))}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid gap-6 lg:grid-cols-2">
-                {/* PM Cost */}
-                <div className="border border-parcelles-dark bg-parcelles-bg p-5 chamfer-bottom-left">
-                  <div
-                    onClick={() => setIsPmExpanded(!isPmExpanded)}
-                    style={{ cursor: "pointer" }}
-                    className="flex justify-between items-center border-b border-parcelles-dark pb-3 mb-3"
-                  >
-                    <div>
-                      <p className="font-display uppercase tracking-widest text-xs opacity-60">Project Management</p>
-                      <h2 className="text-lg font-display mt-0.5">Management percentage</h2>
-                    </div>
-                    {isPmExpanded ? <ChevronUp size={18} className="text-parcelles-dark" /> : <ChevronDown size={18} className="text-parcelles-dark" />}
-                  </div>
-                  {isPmExpanded && (
-                    <div className="mt-3 flex flex-col gap-3">
-                      <div className="flex items-center gap-3 border-b border-parcelles-dark">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="any"
-                          value={draft.project_management_percent ?? ""}
-                          onChange={(event) => updateDraft((current) => ({ ...current, project_management_percent: event.target.value, project_management_cost: "" }))}
-                          placeholder="15"
-                          className="w-full text-xl font-display bg-transparent outline-none py-2"
-                        />
-                        <span className="font-display text-xl">%</span>
-                      </div>
-                      <p className="font-body opacity-80 text-sm leading-relaxed">
-                        Leave this blank to use <span className="font-bold">15%</span> of the staffing subtotal. Enter a percentage, not a currency value.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* Risk Contingency */}
-                <div className="border border-parcelles-dark bg-parcelles-bg p-5 chamfer-bottom-right">
-                  <div
-                    onClick={() => setIsRiskExpanded(!isRiskExpanded)}
-                    style={{ cursor: "pointer" }}
-                    className="flex justify-between items-center border-b border-parcelles-dark pb-3 mb-3"
-                  >
-                    <div>
-                      <p className="font-display uppercase tracking-widest text-xs opacity-60">Risk Contingency</p>
-                      <h2 className="text-lg font-display mt-0.5">Reserve percentage</h2>
-                    </div>
-                    {isRiskExpanded ? <ChevronUp size={18} className="text-parcelles-dark" /> : <ChevronDown size={18} className="text-parcelles-dark" />}
-                  </div>
-                  {isRiskExpanded && (
-                    <div className="mt-3 flex flex-col gap-3">
-                      <div className="flex items-center gap-3 border-b border-parcelles-dark">
-                        <input
-                          type="number"
-                          min="0"
-                          max="100"
-                          step="any"
-                          value={draft.risk_contingency_percent ?? ""}
-                          onChange={(event) => updateDraft((current) => ({ ...current, risk_contingency_percent: event.target.value }))}
-                          placeholder="10"
-                          className="w-full text-xl font-display bg-transparent outline-none py-2"
-                        />
-                        <span className="font-display text-xl">%</span>
-                      </div>
-                      <p className="font-body opacity-80 text-sm leading-relaxed">
-                        Applies a contingency reserve to staffing and project management totals. Leave blank to use <span className="font-bold">10%</span>.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
+            <div style={{ marginBottom: "2rem" }}>
+              <AxcendCostEstimation currency={draft.currency || "USD"} onCurrencyChange={handleCurrencyChangeNoConversion} />
             </div>
-
-            {/* Right Aside: Preview & Export */}
-            <aside className="h-fit sticky top-4">
-              <div className="border border-parcelles-dark bg-parcelles-sage/20 p-5 md:p-6 chamfer-bottom-left">
-                <div className="flex items-center gap-4 border-b border-parcelles-dark pb-4 mb-4">
-                  <div className="w-10 h-10 border border-parcelles-dark flex items-center justify-center chamfer-bottom-right bg-parcelles-bg shrink-0">
-                    <Coins size={18} strokeWidth={1.5} />
-                  </div>
-                  <div>
-                    <p className="font-display uppercase tracking-widest text-xs opacity-60">Live Estimate</p>
-                    <h2 className="text-xl font-display mt-0.5">Cost Preview</h2>
-                  </div>
-                </div>
-
-                <div 
-                  onClick={() => setIsPreviewBreakdownExpanded(!isPreviewBreakdownExpanded)}
-                  style={{ cursor: "pointer" }}
-                  className="flex items-center justify-between border-b border-parcelles-dark/20 pb-4 mb-4"
-                >
-                  <span className="font-display text-sm uppercase tracking-wider text-parcelles-dark/70 font-semibold">Role Breakdown</span>
-                  {isPreviewBreakdownExpanded ? <ChevronUp size={16} className="text-parcelles-dark" /> : <ChevronDown size={16} className="text-parcelles-dark" />}
-                </div>
-                {isPreviewBreakdownExpanded && (
-                  <div className="space-y-6">
-                    {memberBreakdown.filter(m => !m.role.includes("Contingency") && !m.role.includes("Buffer")).map((member, index) => {
-                      const rolePercent = totals.grandTotal > 0 ? (member.total / totals.grandTotal) * 100 : 0;
-                      return (
-                        <div key={member.id} className="border border-parcelles-dark/30 bg-parcelles-bg p-6 chamfer-bottom-right">
-                          <div className="flex items-center justify-between gap-3 mb-6">
-                            <span className="font-display text-xl">{member.role || "Untitled role"}</span>
-                            <span className="font-display bg-parcelles-dark text-parcelles-bg px-3 py-1 text-sm">x{member.count}</span>
-                          </div>
-                          <div className="grid grid-cols-2 gap-y-4 gap-x-4 font-body text-sm opacity-80 mb-6">
-                            <div className="flex flex-col border-r border-parcelles-dark/20">
-                              <span className="font-display uppercase tracking-widest text-[10px]">Per employee</span>
-                              <span className="font-display text-lg mt-1 text-parcelles-dark">
-                                {draft.currency || "--"} {member.costPerEmployee.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                            <div className="flex flex-col text-right">
-                              <span className="font-display uppercase tracking-widest text-[10px]">Role Total</span>
-                              <span className="font-display text-lg mt-1 text-parcelles-dark font-bold">
-                                {draft.currency || "--"} {member.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-2 pt-4 border-t border-parcelles-dark/20">
-                            <div className="flex justify-between font-display text-sm">
-                              <span>{draft.currency || "--"} {member.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                              <span className="font-bold">{rolePercent.toFixed(1)}%</span>
-                            </div>
-                            <div className="h-1.5 w-full bg-parcelles-dark/10">
-                              <div className="h-full bg-parcelles-dark transition-all" style={{ width: `${rolePercent}%` }}></div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <div className="mt-4 border border-parcelles-dark bg-parcelles-bg p-5 chamfer-bottom-left">
-                  {[ 
-                    ["Development", totals.developmentTotal],
-                    ["Testing", totals.testingTotal],
-                    ["Deployment", totals.deploymentTotal],
-                    ["Team Salary", totals.salaryTotal],
-                    [`Project Mgmt (${totals.projectManagementRate}%)`, totals.projectManagement],
-                    [`Risk Contingency (${totals.riskRate}%)`, totals.riskContingency],
-                    [`Negotiation Buffer (${totals.negotiationRate}%)`, totals.negotiationBuffer],
-                  ].map(([label, value]) => (
-                    <div key={label} className="flex items-center justify-between py-2 font-display border-b border-parcelles-dark/20 last:border-0 text-sm">
-                      <span className="opacity-80">{label}</span>
-                      <span>
-                        {draft.currency || "--"} {value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  ))}
-                  
-                  <div className="mt-4 border-t-2 border-parcelles-dark pt-4">
-                    <div className="flex flex-col">
-                      <span className="font-display uppercase tracking-widest text-xs opacity-60 mb-1">Grand Total Estimation</span>
-                      <span className="font-display text-3xl font-bold tracking-tight">
-                        {draft.currency || "--"} {totals.grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-col gap-3">
-                  <button onClick={handleExport} disabled={isExporting} className="w-full py-4 bg-parcelles-dark text-parcelles-bg font-display text-base flex items-center justify-center gap-3 hover:opacity-90 transition-opacity chamfer-bottom-right">
-                    {isExporting ? <Loader2 size={24} className="animate-spin" /> : <Download size={24} />}
-                    {isExporting ? "Exporting..." : "Download Deliverables"}
-                  </button>
-                </div>
-
-                {validationErrors.length ? (
-                  <div className="mt-8 border border-parcelles-dark bg-parcelles-bg p-4 font-display text-sm text-red-600 chamfer-bottom-right">
-                    {validationErrors[0]}
-                  </div>
-                ) : null}
-              </div>
-            </aside>
-          </section>
           </ScrollReveal>
         )}
       </div>

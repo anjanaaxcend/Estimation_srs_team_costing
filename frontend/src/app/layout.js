@@ -28,7 +28,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata = {
-  title: "ScopeSense AI — Intelligent Project Planning",
+  title: "Estimator AI — Intelligent Project Planning",
   description: "AI-native project planning across SRS, team allocation, and cost estimation.",
 };
 

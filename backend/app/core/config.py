@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+# Load environment variables from the root .env file
 load_dotenv(PROJECT_ROOT / ".env")
 
 
@@ -110,13 +111,7 @@ class Settings:
     openai_srs_fallback_models: tuple[str, ...] = _as_csv_tuple(
         os.getenv("OPENAI_SRS_FALLBACK_MODELS")
     )
-    ollama_api_base: str = os.getenv("OLLAMA_API_BASE", "http://localhost:11434/v1")
-    ollama_api_key: str = os.getenv("OLLAMA_API_KEY", "ollama")
-    ollama_srs_enabled: bool = _as_bool(os.getenv("OLLAMA_SRS_ENABLED"), True)
-    ollama_srs_model: str = os.getenv("OLLAMA_SRS_MODEL", "llama3.1")
-    ollama_srs_fallback_models: tuple[str, ...] = _as_csv_tuple(
-        os.getenv("OLLAMA_SRS_FALLBACK_MODELS")
-    )
+
     gemini_api_key: str | None = os.getenv("GEMINI_API_KEY") or None
     gemini_srs_model: str = os.getenv("GEMINI_SRS_MODEL", "gemini-flash-latest")
     gemini_srs_fallback_models: tuple[str, ...] = _as_csv_tuple(

@@ -13,7 +13,6 @@ const NAV_LINKS = [
   { href: "/srs",             label: "SRS",         number: "02" },
   { href: "/team-design",     label: "Team",        number: "03" },
   { href: "/cost-estimation", label: "Costs",       number: "04" },
-  { href: "/download",        label: "Export",      number: "05" },
 ];
 
 export function StudioShell({ children }) {
@@ -71,7 +70,7 @@ export function StudioShell({ children }) {
       router.push("/team-design");
     } else if (pathname === "/download") {
       router.push("/cost-estimation");
-    } else if (pathname === "/history" || pathname === "/dashboard") {
+    } else if (pathname === "/history") {
       router.push("/input");
     } else {
       router.push("/");
@@ -217,7 +216,7 @@ export function StudioShell({ children }) {
                 whiteSpace: "nowrap",
               }}
             >
-              ScopeSense AI · SRS · Team · Cost
+              Estimator AI · SRS · Team · Cost
             </span>
           </div>
 
@@ -262,6 +261,7 @@ export function StudioShell({ children }) {
             height: isAuthPage ? "100vh" : "auto",
             overflow: isAuthPage ? "hidden" : "visible",
             position: "relative",
+            paddingBottom: "5rem",
           }}
         >
           {/* Floating Back Button */}
@@ -269,14 +269,14 @@ export function StudioShell({ children }) {
             <button
               onClick={handleBack}
               style={{
-                position: "fixed",
+                position: "absolute",
                 top: "1.5rem",
-                left: "calc(clamp(72px, 6vw, 100px) + clamp(1.5rem, 5vw, 5rem))",
+                left: "clamp(1.5rem, 5vw, 5rem)",
                 zIndex: 50,
                 display: "flex",
                 alignItems: "center",
                 gap: "0.4rem",
-                padding: "0.5rem 1.25rem",
+                padding: "0.5rem 12px",
                 border: "1px solid rgba(10, 28, 22, 0.3)",
                 background: "var(--bg-primary)",
                 color: "rgba(10, 28, 22, 0.7)",
@@ -297,7 +297,7 @@ export function StudioShell({ children }) {
           {/* ── FLOATING TOP NAV ── */}
           <div
             style={{
-              position: "fixed",
+              position: "absolute",
               top: "1.5rem",
               right: "1.5rem",
               zIndex: 50,
@@ -309,7 +309,7 @@ export function StudioShell({ children }) {
             {!isAuthPage && !isHomePage && (
               user ? (
                 <>
-                  {pathname === "/dashboard" && (
+                  {pathname !== "/history" && (
                     <Link
                       href="/history"
                       style={{
@@ -343,7 +343,7 @@ export function StudioShell({ children }) {
                       textTransform: "uppercase",
                       cursor: "pointer",
                       borderRadius: "1px",
-                      marginLeft: pathname === "/dashboard" ? "1rem" : "0",
+                      marginLeft: pathname !== "/history" ? "1rem" : "0",
                     }}
                     className="hover-line"
                   >

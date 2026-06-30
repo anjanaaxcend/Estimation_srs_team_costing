@@ -13,7 +13,6 @@ const PROTECTED_ROUTES = [
   "/cost-estimation",
   "/download",
   "/history",
-  "/dashboard",
 ];
 
 // Routes that logged in users shouldn't see
@@ -196,7 +195,7 @@ export function AuthProvider({ children }) {
       if (response.ok) {
         persistSession(data.user, data.access_token);
         refreshUser();
-        router.push("/dashboard");
+        router.push("/input");
         return { success: true };
       }
       return { success: false, error: data.detail || "Invalid email or password" };
@@ -217,7 +216,7 @@ export function AuthProvider({ children }) {
       if (response.ok) {
         persistSession(data.user, data.access_token);
         refreshUser();
-        router.push("/dashboard");
+        router.push("/input");
         return { success: true };
       }
       return { success: false, error: data.detail || "Registration failed" };

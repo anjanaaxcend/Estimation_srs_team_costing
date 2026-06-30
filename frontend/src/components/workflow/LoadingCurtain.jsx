@@ -152,7 +152,7 @@ export function LoadingCurtain() {
               margin: 0,
             }}
           >
-            ScopeSense AI Active - {subText}
+            Estimator AI Active - {subText}
           </p>
           <h2
             style={{

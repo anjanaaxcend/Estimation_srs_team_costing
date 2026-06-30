@@ -129,24 +129,6 @@ export default function Home() {
                   >
                     {user.name || user.email}
                   </span>
-                  <Link
-                    href="/dashboard"
-                    style={{
-                      padding: "0.45rem 1.1rem",
-                      border: "1px solid rgba(142,196,160,0.6)",
-                      background: "rgba(142,196,160,0.12)",
-                      color: "#8EC4A0",
-                      fontFamily: "var(--font-display)",
-                      fontSize: "0.62rem",
-                      letterSpacing: "0.18em",
-                      textTransform: "uppercase",
-                      textDecoration: "none",
-                      transition: "background 0.2s ease, border-color 0.2s ease",
-                    }}
-                    className="hover-line"
-                  >
-                    Dashboard →
-                  </Link>
                   <button
                     onClick={logout}
                     style={{
@@ -265,7 +247,7 @@ export default function Home() {
                   }}
                 >
                   Between raw ambition and structured execution —<br />
-                  ScopeSense bridges the gap.
+                  Estimator bridges the gap.
                 </p>
               </ScrollReveal>
 
@@ -355,7 +337,7 @@ export default function Home() {
                 >
                   and structured
                 </em>{" "}
-                execution, ScopeSense AI bridges the gap.
+                execution, Estimator AI bridges the gap.
               </h2>
             </ScrollReveal>
 
@@ -690,7 +672,7 @@ export default function Home() {
               color: "rgba(10,28,22,0.4)",
             }}
           >
-            ScopeSense AI © 2024
+            Estimator AI © 2024
           </span>
           <span
             style={{

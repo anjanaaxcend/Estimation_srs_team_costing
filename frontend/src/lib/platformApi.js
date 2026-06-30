@@ -195,9 +195,14 @@ export const saveCostDraftApi = async (costDraft) => {
   });
 };
 
-export const getOllamaModels = async () => {
-  return apiFetch("/health/ollama-models");
+export const saveAxcendDraftApi = async (axcendDraft) => {
+  return apiFetch("/srs/temp-draft/axcend", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft: axcendDraft }),
+  });
 };
+
 
 export const getRateLimitStatus = async (engine = "openai") => {
   return apiFetch(`/health/rate-limit?engine=${encodeURIComponent(engine)}`);
@@ -374,6 +379,30 @@ export const exportCostExcel = async (costData) => {
   a.remove();
 };
 
+export const exportAxcendExcel = async (payload) => {
+  const token = localStorage.getItem("scopesense_token");
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE}/cost/export-axcend-excel`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) throw new Error("Axcend Excel export failed");
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(payload.project_name || "Project").replace(/\s+/g, "_")}_Axcend_Estimation.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+
+
 export const exportBundle = async ({ srs, team, cost }) => {
   const token = localStorage.getItem("scopesense_token");
   const headers = { "Content-Type": "application/json" };
@@ -390,7 +419,7 @@ export const exportBundle = async ({ srs, team, cost }) => {
   const blob = await response.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const filename = `${(srs.structuredRequirements?.project_name || "Project").replace(/\s+/g, "_")}_ScopeSense_Master.xlsx`;
+  const filename = `${(srs.structuredRequirements?.project_name || "Project").replace(/\s+/g, "_")}_Estimator_Master.xlsx`;
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -445,3 +474,46 @@ export const updateAdminUserPlan = async (userId, { tier, custom_budget }) => {
 export const getAdminTokenUsage = async () => {
   return apiFetch("/admin/token-usage");
 };
+
+/**
+ * Build the AXCEND Effort Estimation from an existing TeamAnalysisResult.
+ * Percentages are always passed from the UI — never hard-coded.
+ *
+ * @param {Object} params
+ * @param {Object} params.analysis       - TeamAnalysisResult from team allocation step
+ * @param {string} params.selectedOption - "fastest" | "balanced" | "lean"
+ * @param {Array}  params.companyRoster  - company roster array
+ * @param {string} params.location       - location string (default "India")
+ * @param {Object} params.percentages    - optional override object with keys:
+ *   internal_testing_pct, client_testing_pct, deployment_pct,
+ *   pm_pct, risk_pct, negotiation_pct
+ */
+export const buildAxcendEstimation = async ({
+  analysis,
+  selectedOption = "balanced",
+  companyRoster = null,
+  location = "India",
+  percentages = {},
+}) => {
+  return apiFetch("/team/build-axcend-estimation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      analysis,
+      selected_option: selectedOption,
+      company_roster: companyRoster,
+      location,
+      internal_testing_pct: percentages.internal_testing_pct ?? 0.20,
+      client_testing_pct:   percentages.client_testing_pct   ?? 0.10,
+      deployment_pct:       percentages.deployment_pct       ?? 0.10,
+      pm_pct:               percentages.pm_pct               ?? 0.15,
+      risk_pct:             percentages.risk_pct             ?? 0.10,
+      negotiation_pct:      percentages.negotiation_pct      ?? 0.05,
+    }),
+  });
+};
+
+export const getExchangeRates = async () => {
+  return apiFetch("/cost/exchange-rates");
+};
+

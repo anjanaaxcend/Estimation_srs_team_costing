@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -10,11 +10,14 @@ import {
   FileSpreadsheet,
   Globe,
   Layers3,
+  Plus,
   RefreshCw,
   Save,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Undo2,
+  Users,
   X,
   Loader2,
 } from "lucide-react";
@@ -25,6 +28,272 @@ import { useAuth } from "@/context/AuthContext";
 import { regenerateSrs, saveFeedback } from "@/lib/platformApi";
 import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { HorizontalMarquee } from "@/components/ui/HorizontalMarquee";
+
+// ─── Shared Roster Storage ────────────────────────────────────────────────────
+const SHARED_ROSTER_KEY = "scopesense-company-roster-v1";
+
+const DEFAULT_ROSTER = [
+  { name: "Resource A", role: "S3 Developer", experience_years: 12, hourly_rate_override: null },
+  { name: "Resource B", role: "S2 Developer", experience_years: 8,  hourly_rate_override: null },
+  { name: "Resource C", role: "S1 Developer", experience_years: 2,  hourly_rate_override: null },
+];
+
+const CURRENCY_SYMBOLS = { USD: "$", INR: "\u20b9", EUR: "\u20ac", GBP: "\u00a3", JPY: "\u00a5" };
+const getCurrencySymbol = (c) => CURRENCY_SYMBOLS[c] || "$";
+
+const loadSharedRoster = () => {
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(SHARED_ROSTER_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {}
+  return DEFAULT_ROSTER;
+};
+
+const saveSharedRoster = (roster) => {
+  try {
+    window.localStorage.setItem(SHARED_ROSTER_KEY, JSON.stringify(roster));
+  } catch (e) {}
+};
+
+// ─── Edit Roster Modal ────────────────────────────────────────────────────────
+function EditRosterModal({ onClose }) {
+  const [roster, setRoster] = useState(() => loadSharedRoster());
+  const [currency, setCurrency] = useState("INR");
+  const [newName, setNewName] = useState("");
+  const [newRole, setNewRole] = useState("");
+  const [newExp, setNewExp]   = useState(5);
+  const [newRate, setNewRate] = useState("");
+
+  const calcRate = (exp) => {
+    const y = Number(exp) || 0;
+    if (y >= 10) return 50;
+    if (y >= 5)  return 45;
+    return 40;
+  };
+
+  const updateMember = (index, field, value) => {
+    setRoster((prev) => {
+      const next = [...prev];
+      const m = { ...next[index] };
+      if (field === "name") m.name = value;
+      else if (field === "role") m.role = value;
+      else if (field === "experience_years") m.experience_years = Math.max(0, Number(value) || 0);
+      else if (field === "hourly_rate_override") m.hourly_rate_override = value === "" ? null : Math.max(0, Number(value) || 0);
+      next[index] = m;
+      return next;
+    });
+  };
+
+  const addMember = () => {
+    if (!newName.trim()) return;
+    setRoster((prev) => [
+      ...prev,
+      {
+        name: newName.trim(),
+        role: newRole.trim() || "S2 Developer",
+        experience_years: Number(newExp) || 0,
+        hourly_rate_override: newRate !== "" ? Number(newRate) : null,
+      },
+    ]);
+    setNewName(""); setNewRole(""); setNewExp(5); setNewRate("");
+  };
+
+  const removeMember = (index) => {
+    setRoster((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSave = () => {
+    saveSharedRoster(roster);
+    onClose();
+  };
+
+  const sym = getCurrencySymbol(currency);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(10,28,22,0.88)", backdropFilter: "blur(8px)", padding: "1rem" }}>
+      <div style={{ width: "100%", maxWidth: "860px", background: "#EBEBEB", border: "1px solid #0A1C16", clipPath: "polygon(0 0, 100% 0, 100% 100%, 28px 100%, 0 calc(100% - 28px))", display: "flex", flexDirection: "column", maxHeight: "90vh" }}>
+
+        {/* Header */}
+        <div style={{ padding: "1.75rem 2rem", borderBottom: "1px solid #0A1C16", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "1rem", flexShrink: 0 }}>
+          <div>
+            <p style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.15em", color: "rgba(10,28,22,0.5)", marginBottom: "0.5rem" }}>Company Resource Roster</p>
+            <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 300, fontSize: "1.8rem", letterSpacing: "-0.02em", color: "#0A1C16", lineHeight: 1.1 }}>
+              Edit <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontWeight: 400, opacity: 0.6 }}>your team roster</em>
+            </h2>
+            <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.6)", marginTop: "0.5rem", lineHeight: 1.6, fontWeight: 300 }}>
+              Changes saved here will be visible in Team Allocation when generating team assignments.
+            </p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexShrink: 0 }}>
+            {/* Currency selector */}
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", border: "1px solid rgba(10,28,22,0.3)", padding: "0.35rem 0.75rem", fontSize: "0.75rem", fontFamily: "var(--font-display)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span style={{ opacity: 0.5 }}>Currency:</span>
+              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={{ background: "transparent", border: "none", outline: "none", fontFamily: "var(--font-display)", fontWeight: 700, cursor: "pointer", color: "#0A1C16" }}>
+                <option value="INR">INR (₹)</option>
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="JPY">JPY (¥)</option>
+              </select>
+            </div>
+            <button onClick={onClose} style={{ padding: "0.5rem", border: "1px solid rgba(10,28,22,0.3)", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Table */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem 2rem" }}>
+          {/* Column headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center", padding: "0.5rem 0.75rem", background: "rgba(196,215,201,0.25)", borderBottom: "1px solid rgba(10,28,22,0.15)", marginBottom: "0.25rem" }}>
+            {["Name", "Role", "Exp (Yrs)", "Hourly Pay", ""].map((h, i) => (
+              <div key={i} style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(10,28,22,0.5)" }}>{h}</div>
+            ))}
+          </div>
+
+          {/* Existing members */}
+          <div style={{ border: "1px solid rgba(10,28,22,0.12)", borderTop: "none" }}>
+            {roster.length === 0 && (
+              <div style={{ padding: "2rem", textAlign: "center", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.45)" }}>
+                No roster members yet. Add one below.
+              </div>
+            )}
+            {roster.map((member, index) => (
+              <div
+                key={index}
+                style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center", padding: "0.6rem 0.75rem", borderBottom: "1px solid rgba(10,28,22,0.07)", background: index % 2 === 0 ? "transparent" : "rgba(196,215,201,0.04)" }}
+              >
+                <input
+                  type="text"
+                  value={member.name}
+                  onChange={(e) => updateMember(index, "name", e.target.value)}
+                  style={{ width: "100%", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.6rem", background: "transparent", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16", fontWeight: 500 }}
+                  placeholder="Member name"
+                />
+                <input
+                  type="text"
+                  value={member.role}
+                  onChange={(e) => updateMember(index, "role", e.target.value)}
+                  style={{ width: "100%", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.6rem", background: "transparent", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "rgba(10,28,22,0.8)" }}
+                  placeholder="e.g. S2 Developer"
+                />
+                <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <input
+                    type="number"
+                    min="0"
+                    max="50"
+                    step="0.5"
+                    value={member.experience_years}
+                    onChange={(e) => updateMember(index, "experience_years", e.target.value)}
+                    style={{ width: "52px", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.35rem", background: "transparent", outline: "none", fontFamily: "var(--font-mono,monospace)", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>yrs</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                  <span style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "0.8rem", color: "rgba(10,28,22,0.55)" }}>{sym}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={member.hourly_rate_override != null ? member.hourly_rate_override : calcRate(member.experience_years)}
+                    onChange={(e) => updateMember(index, "hourly_rate_override", e.target.value)}
+                    style={{ width: "62px", border: "1px solid rgba(10,28,22,0.2)", padding: "0.4rem 0.35rem", background: "transparent", outline: "none", fontFamily: "var(--font-mono,monospace)", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16", fontWeight: 600 }}
+                    title="Hourly pay — edit to override computed rate"
+                  />
+                  <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>/hr</span>
+                </div>
+                <button
+                  onClick={() => removeMember(index)}
+                  style={{ padding: "0.4rem", border: "1px solid rgba(220,38,38,0.25)", background: "transparent", color: "#991b1b", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.2s ease" }}
+                  title="Remove member"
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(220,38,38,0.1)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Add new member row */}
+          <div style={{ marginTop: "1.25rem", border: "1px dashed rgba(10,28,22,0.25)", padding: "1rem", background: "rgba(196,215,201,0.06)" }}>
+            <p style={{ fontFamily: "var(--font-display)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(10,28,22,0.45)", marginBottom: "0.75rem" }}>Add New Member</p>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1fr 1.5fr auto", gap: "0.75rem", alignItems: "center" }}>
+              <input
+                type="text"
+                placeholder="Name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                style={{ width: "100%", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.6rem", background: "#fff", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16" }}
+              />
+              <input
+                type="text"
+                placeholder="Role (e.g. S1 Developer)"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value)}
+                style={{ width: "100%", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.6rem", background: "#fff", outline: "none", fontFamily: "var(--font-sans)", fontSize: "0.85rem", color: "#0A1C16" }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                <input
+                  type="number"
+                  min="0"
+                  max="50"
+                  step="0.5"
+                  value={newExp}
+                  onChange={(e) => setNewExp(e.target.value)}
+                  style={{ width: "52px", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.35rem", background: "#fff", outline: "none", fontFamily: "var(--font-mono,monospace)", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                />
+                <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>yrs</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                <span style={{ fontFamily: "var(--font-mono,monospace)", fontSize: "0.8rem", color: "rgba(10,28,22,0.55)" }}>{sym}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder={String(calcRate(newExp))}
+                  value={newRate}
+                  onChange={(e) => setNewRate(e.target.value)}
+                  style={{ width: "62px", border: "1px solid rgba(10,28,22,0.25)", padding: "0.5rem 0.35rem", background: "#fff", outline: "none", fontFamily: "var(--font-mono,monospace)", fontSize: "0.85rem", textAlign: "center", color: "#0A1C16" }}
+                  title="Optional: override hourly rate"
+                />
+                <span style={{ fontSize: "0.7rem", color: "rgba(10,28,22,0.45)" }}>/hr</span>
+              </div>
+              <button
+                onClick={addMember}
+                disabled={!newName.trim()}
+                style={{ padding: "0.5rem 0.9rem", background: newName.trim() ? "#0A1C16" : "rgba(10,28,22,0.25)", color: newName.trim() ? "#EBEBEB" : "rgba(235,235,235,0.5)", border: "none", fontFamily: "var(--font-display)", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.1em", cursor: newName.trim() ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "0.35rem", transition: "all 0.2s ease" }}
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "1.25rem 2rem", borderTop: "1px solid rgba(10,28,22,0.15)", display: "flex", gap: "0.75rem", justifyContent: "flex-end", flexShrink: 0, background: "rgba(196,215,201,0.08)" }}>
+          <button
+            onClick={onClose}
+            style={{ padding: "0.75rem 1.5rem", border: "1px solid rgba(10,28,22,0.3)", background: "transparent", fontFamily: "var(--font-display)", fontSize: "0.8rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#0A1C16", cursor: "pointer" }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            style={{ padding: "0.75rem 1.75rem", background: "#0A1C16", color: "#EBEBEB", fontFamily: "var(--font-display)", fontSize: "0.8rem", letterSpacing: "0.1em", textTransform: "uppercase", border: "none", display: "flex", alignItems: "center", gap: "0.6rem", cursor: "pointer", clipPath: "polygon(0 0, 100% 0, 100% 100%, 16px 100%, 0 calc(100% - 16px))", transition: "opacity 0.2s ease" }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.85"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+          >
+            <Save size={16} /> Save Roster
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const MODULE_SECTION_HINTS = ["project modules", "modules and features", "module"];
 const UI_SECTION_HINTS = ["ui pages", "screen design", "user interface", "ui page"];
@@ -284,9 +553,7 @@ const buildApprovedUiPages = ({ modules = [], structuredUiPages = [], previewUiP
 
   candidates.forEach((page) => {
     const pageKey = normalizeName(page.name);
-    const moduleKey = normalizeName(page.primary_module);
     if (!pageKey || seen.has(pageKey)) return;
-    if (moduleKey && !moduleKeys.has(moduleKey)) return;
     seen.add(pageKey);
     approved.push(page);
   });
@@ -663,7 +930,7 @@ export function SrsApprovalExperience() {
       // Best effort analytics only.
     } finally {
       setIsApproving(false);
-      router.push("/download");
+      router.push("/team-design");
     }
   };
 
@@ -676,7 +943,7 @@ export function SrsApprovalExperience() {
               <div>
                 <p className="text-eyebrow" style={{ color: "rgba(10,28,22,0.5)", marginBottom: "0.75rem" }}>Regenerate SRS</p>
                 <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 300, fontSize: "2rem", letterSpacing: "-0.02em", color: "#0A1C16", lineHeight: 1.1 }}>
-                  Tell ScopeSense{" "}
+                  Tell Estimator{" "}
                   <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", fontWeight: 400, opacity: 0.6 }}>what to improve</em>
                 </h2>
                 <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.9rem", color: "rgba(10,28,22,0.6)", marginTop: "0.75rem", lineHeight: 1.65, fontWeight: 300 }}>

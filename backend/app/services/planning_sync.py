@@ -153,9 +153,9 @@ def enrich_team_members_with_planning(members: list[Any], text: str) -> tuple[li
     total_working_weeks = insights.total_working_weeks or (max(computed_weeks) if computed_weeks else 0.0)
     return (
         enriched_members,
-        round(total_project_hours, 2),
-        round(total_working_weeks, 2),
-        round(insights.weekly_hours_per_member or 40.0, 2),
+        int(round(total_project_hours)),
+        int(round(total_working_weeks)),
+        int(round(insights.weekly_hours_per_member or 40.0)),
     )
 
 
@@ -172,11 +172,8 @@ def calculate_cost_totals(cost: Any) -> dict[str, Any]:
         count = safe_float(member.count)
         hourly_rate = safe_float(member.hourly_rate)
         hours_per_member = safe_float(member.hours_per_member)
-        cost_per_employee = round(hourly_rate * hours_per_member, 2)
-        role_total = round(
-            count * cost_per_employee,
-            2,
-        )
+        cost_per_employee = int(round(hourly_rate * hours_per_member))
+        role_total = int(round(count * cost_per_employee))
         role_name = getattr(member, "role", "")
         
         total_project_hours += count * hours_per_member
@@ -197,22 +194,19 @@ def calculate_cost_totals(cost: Any) -> dict[str, Any]:
                 "id": getattr(member, "id", None),
                 "role": role_name,
                 "count": int(count),
-                "hourly_rate": round(hourly_rate, 2),
-                "weekly_hours": round(safe_float(getattr(member, "weekly_hours", 40.0), 40.0), 2),
-                "hours_per_member": round(hours_per_member, 2),
+                "hourly_rate": int(round(hourly_rate)),
+                "weekly_hours": int(round(safe_float(getattr(member, "weekly_hours", 40.0), 40.0))),
+                "hours_per_member": int(round(hours_per_member)),
                 "cost_per_employee": cost_per_employee,
                 "role_total": role_total,
                 "total": role_total,
             }
         )
 
-    development_total = round(development_total, 2)
-    testing_total = round(testing_total, 2)
-    deployment_total = round(deployment_total, 2)
-    salary_total = round(
-        salary_total,
-        2,
-    )
+    development_total = int(round(development_total))
+    testing_total = int(round(testing_total))
+    deployment_total = int(round(deployment_total))
+    salary_total = int(round(salary_total))
 
     other_misc_costs = []
     risk_contingency_cost = 0.0
@@ -228,28 +222,32 @@ def calculate_cost_totals(cost: Any) -> dict[str, Any]:
         else:
             other_misc_costs.append(item)
 
-    misc_total = round(sum(safe_float(item.amount) for item in other_misc_costs), 2)
-    profit_total = round(sum(safe_float(item.amount) for item in getattr(cost, "profit_slabs", [])), 2)
+    misc_total = int(round(sum(safe_float(item.amount) for item in other_misc_costs)))
+    profit_total = int(round(sum(safe_float(item.amount) for item in getattr(cost, "profit_slabs", []))))
     
-    project_management_input = round(safe_float(getattr(cost, "project_management_cost", 0.0)), 2)
+    project_management_input = int(round(safe_float(getattr(cost, "project_management_cost", 0.0))))
     if project_management_input > 0:
         project_management = project_management_input
     elif management_salary_total > 0:
-        project_management = round(management_salary_total, 2)
+        project_management = int(round(management_salary_total))
     else:
-        project_management = round(salary_total * 0.15, 2)
+        project_management = int(round(salary_total * 0.10))
 
     effort_subtotal = salary_total + project_management + misc_total
 
     if risk_contingency_cost <= 0:
-        risk_contingency_cost = round(effort_subtotal * 0.10, 2)
+        risk_contingency_cost = int(round(effort_subtotal * 0.10))
+    else:
+        risk_contingency_cost = int(round(risk_contingency_cost))
 
     if negotiation_buffer_cost <= 0:
-        negotiation_buffer_cost = round(effort_subtotal * 0.05, 2)
+        negotiation_buffer_cost = int(round(effort_subtotal * 0.05))
+    else:
+        negotiation_buffer_cost = int(round(negotiation_buffer_cost))
 
-    project_total_estimation = round(effort_subtotal + risk_contingency_cost + negotiation_buffer_cost, 2)
-    grand_total = round(project_total_estimation + profit_total, 2)
-    total_project_hours = round(total_project_hours, 2)
+    project_total_estimation = int(round(effort_subtotal + risk_contingency_cost + negotiation_buffer_cost))
+    grand_total = int(round(project_total_estimation + profit_total))
+    total_project_hours = int(round(total_project_hours))
 
     return {
         "member_breakdown": member_breakdown,

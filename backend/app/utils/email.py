@@ -26,20 +26,20 @@ def send_otp_email(to_email: str, otp_code: str) -> bool:
         return True # Return true so development flow isn't blocked
 
     sender_email = settings.smtp_user
-    sender_name = "ScopeSense AI"
+    sender_name = "Estimator AI"
     
     # Create HTML styled message matching application aesthetics
     msg = MIMEMultipart()
     msg["From"] = f"{sender_name} <{sender_email}>"
     msg["To"] = to_email
-    msg["Subject"] = "ScopeSense AI Password Reset OTP Code"
+    msg["Subject"] = "Estimator AI Password Reset OTP Code"
     
     body = f"""
     <html>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #0A1C16; background-color: #EBEBEB; padding: 40px 20px; margin: 0;">
         <div style="max-width: 460px; margin: 0 auto; background: #F5F3EE; padding: 40px; border: 1px solid #0A1C16; box-shadow: 0 4px 20px rgba(10,28,22,0.05); text-align: left;">
           <h2 style="font-family: monospace; font-weight: 500; font-size: 20px; letter-spacing: 0.1em; color: #0A1C16; border-bottom: 1px solid rgba(10,28,22,0.1); padding-bottom: 20px; margin-top: 0; text-transform: uppercase;">
-            ScopeSense AI
+            Estimator AI
           </h2>
           <p style="font-size: 14px; color: #0A1C16; opacity: 0.8; margin-top: 24px; margin-bottom: 24px;">
             A request was made to reset your account password. Please use the verification code below to proceed:

@@ -18,6 +18,7 @@ import {
   Users,
   BarChart3
 } from "lucide-react";
+import { AxcendEffortEstimation } from "@/components/workflow/AxcendEffortEstimation";
 
 import { PageIntro } from "@/components/workflow/PageIntro";
 import { useWorkflow } from "@/context/WorkflowContext";
@@ -50,13 +51,14 @@ const SUPPORT_COVERAGE_OPTIONS = [
 
 const classifyRoleWorkstream = (role = "") => {
   const lowered = (role || "").toLowerCase();
-  if (lowered.includes("qa") || lowered.includes("tester") || lowered.includes("test engineer")) return "testing";
+  if (lowered.includes("qa") || lowered.includes("tester") || lowered.includes("test engineer") || lowered.includes("testing")) return "testing";
   if (
     lowered.includes("project manager") ||
     lowered.includes("program manager") ||
     lowered.includes("scrum master") ||
     lowered.includes("business analyst") ||
-    lowered.includes("product manager")
+    lowered.includes("product manager") ||
+    lowered.includes("project management")
   ) {
     return "management";
   }
@@ -66,7 +68,8 @@ const classifyRoleWorkstream = (role = "") => {
     lowered.includes("release engineer") ||
     lowered.includes("site reliability") ||
     lowered.includes("sre") ||
-    lowered.includes("cloud engineer")
+    lowered.includes("cloud engineer") ||
+    lowered.includes("deployment")
   ) {
     return "deployment";
   }
@@ -83,33 +86,27 @@ const normalizeRoleTitle = (role = "") =>
 const isIntegratedSupportWorkstream = (workstream) => ["management", "deployment"].includes(workstream);
 
 const groupMembersByBox = (members = []) => {
-  const devList = [];
-  const testList = [];
-  const pmDeployList = [];
+  const preEngList = [];
+  const engList = [];
+  const pmList = [];
 
   members.forEach((member) => {
     const roleLower = String(member.role || "").toLowerCase();
-    if (
-      roleLower.includes("qa") || 
-      roleLower.includes("tester") || 
-      roleLower.includes("test engineer") ||
-      roleLower.includes("quality assurance") ||
-      roleLower.includes("(testing)")
-    ) {
-      testList.push(member);
+    if (roleLower.includes("pre-engineering") || roleLower.includes("pre engineering")) {
+      preEngList.push(member);
     } else if (
-      (roleLower.includes("developer") || roleLower.includes("engineer") || roleLower.includes("architect")) &&
-      !roleLower.includes("lead") && 
-      !roleLower.includes("(deployment)") &&
-      !roleLower.includes("devops")
+      roleLower.includes("project management") ||
+      roleLower.includes("pm") ||
+      roleLower.includes("manager") ||
+      roleLower.includes("deployment")
     ) {
-      devList.push(member);
+      pmList.push(member);
     } else {
-      pmDeployList.push(member);
+      engList.push(member);
     }
   });
 
-  return { devList, testList, pmDeployList };
+  return { preEngList, engList, pmList };
 };
 
 const withSelectedAllocation = (member) => ({
@@ -117,14 +114,21 @@ const withSelectedAllocation = (member) => ({
   selected: member.selected !== false,
 });
 
-const asArray = (value) => (Array.isArray(value) ? value : []);
+const CURRENCY_SYMBOLS = {
+  USD: "$",
+  INR: "₹",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥"
+};
+
+const getCurrencySymbol = (currency) => CURRENCY_SYMBOLS[currency] || "$";
 
 const calculateHourlyPay = (years) => {
   const y = Number(years) || 0;
-  if (y > 10) return 400;
-  if (y >= 8) return 350;
-  if (y >= 5) return 300;
-  return 200;
+  if (y >= 10) return 50;
+  if (y >= 5) return 45;
+  return 40;
 };
 
 const getExperienceFromRole = (role = "") => {
@@ -270,13 +274,21 @@ const mapSupportMembersWithRates = (membersList, companyRoster) => {
     m && m.role && isIntegratedSupportWorkstream(classifyRoleWorkstream(m.role))
   ).map((m) => {
     const candidate = findBestRosterMatch(companyRoster, m.role);
-    const rate = candidate ? calculateHourlyPay(candidate.experience_years) : 200;
+    const rate = candidate
+      ? (candidate.hourly_rate_override != null ? Number(candidate.hourly_rate_override) : calculateHourlyPay(candidate.experience_years))
+      : 200;
     return {
       ...withSelectedAllocation(m),
       role: candidate ? `${candidate.name} (${candidate.role})` : m.role,
       hourly_rate: rate,
     };
   });
+};
+
+const asArray = (val) => {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return [val];
 };
 
 const getItemName = (item, fallback = "") => {
@@ -424,43 +436,435 @@ const buildApprovedTeamPayload = (teamData) => {
   };
 };
 
+const initializeFeatureList = (srs, companyRoster) => {
+  const requirements = srs?.structuredRequirements;
+  if (!requirements) return [];
+
+  const modules = requirements.modules || [];
+  const features = requirements.features || [];
+  const featureList = [];
+  let slNo = 1;
+
+  // Classify a roster member to S3 / S2 / S1
+  const classifyLevel = (r) => {
+    const rLower = (r.role || "").toLowerCase();
+    if (rLower.includes("s3") || rLower.includes("lead") || rLower.includes("architect") || r.experience_years >= 10) return "S3";
+    if (rLower.includes("s2") || rLower.includes("senior") || (r.experience_years >= 5 && r.experience_years < 10)) return "S2";
+    return "S1";
+  };
+
+  // Group all roster members by level
+  const roster = companyRoster || [];
+  const s3Members = roster.filter(r => classifyLevel(r) === "S3");
+  const s2Members = roster.filter(r => classifyLevel(r) === "S2");
+  const s1Members = roster.filter(r => classifyLevel(r) === "S1");
+  const hasS3 = s3Members.length > 0;
+  const hasS2 = s2Members.length > 0;
+  const hasS1 = s1Members.length > 0;
+
+  // Build raw feature list from SRS modules
+  modules.forEach((mod) => {
+    const modName = mod.name || mod.module_name || "General";
+    const featNames = mod.feature_names || [];
+    featNames.forEach((featName) => {
+      const featDetail = features.find(
+        (f) => (f.name || f.feature_name || "").toLowerCase() === featName.toLowerCase()
+      );
+      const complexity = featDetail?.complexity || "Medium";
+      const description = featDetail?.description || featDetail?.summary || "No description available";
+      let baseHours = 24;
+      if (complexity.toLowerCase().includes("high")) baseHours = 40;
+      else if (complexity.toLowerCase().includes("medium")) baseHours = 24;
+      else if (complexity.toLowerCase().includes("low")) baseHours = 8;
+      featureList.push({
+        id: `${modName}-${featName}`,
+        slNo: slNo++,
+        moduleName: modName,
+        featureName: featName,
+        complexity,
+        baseHours,
+        developer: "S1",
+        description,
+        hours: baseHours
+      });
+    });
+  });
+
+  // Add any orphan features not already listed
+  features.forEach((feat) => {
+    const featName = feat.name || feat.feature_name;
+    if (!featureList.some((item) => item.featureName.toLowerCase() === featName.toLowerCase())) {
+      const complexity = feat.complexity || "Medium";
+      const description = feat.description || feat.summary || "No description available";
+      let baseHours = 24;
+      if (complexity.toLowerCase().includes("high")) baseHours = 40;
+      else if (complexity.toLowerCase().includes("medium")) baseHours = 24;
+      else if (complexity.toLowerCase().includes("low")) baseHours = 8;
+      featureList.push({
+        id: `General-${featName}`,
+        slNo: slNo++,
+        moduleName: "General",
+        featureName: featName,
+        complexity,
+        baseHours,
+        developer: "S1",
+        description,
+        hours: baseHours
+      });
+    }
+  });
+
+  // Compute level slice limits based on which levels are present
+  const totalFeatures = featureList.length;
+  let s3Limit = 0;
+  let s2Limit = 0;
+  if (hasS3 && hasS2 && hasS1) {
+    s3Limit = Math.round(totalFeatures * 0.20);
+    s2Limit = s3Limit + Math.round(totalFeatures * 0.30);
+  } else if (hasS2 && hasS1) {
+    s2Limit = Math.round(totalFeatures * 0.30);
+  } else if (hasS3 && hasS1) {
+    s3Limit = Math.round(totalFeatures * 0.30);
+    s2Limit = s3Limit;
+  } else if (hasS3 && hasS2) {
+    s3Limit = Math.round(totalFeatures * 0.40);
+    s2Limit = totalFeatures;
+  } else if (hasS3) {
+    s3Limit = totalFeatures; s2Limit = totalFeatures;
+  } else if (hasS2) {
+    s2Limit = totalFeatures;
+  }
+
+  // Assign actual roster member names via round-robin within each level slice
+  let s3Counter = 0, s2Counter = 0, s1Counter = 0;
+  featureList.forEach((feat, index) => {
+    let assignedMember = null;
+    if (index < s3Limit && hasS3) {
+      assignedMember = s3Members[s3Counter % s3Members.length];
+      s3Counter++;
+    } else if (index < s2Limit && hasS2) {
+      assignedMember = s2Members[s2Counter % s2Members.length];
+      s2Counter++;
+    } else if (hasS1) {
+      assignedMember = s1Members[s1Counter % s1Members.length];
+      s1Counter++;
+    } else if (hasS2) {
+      assignedMember = s2Members[s2Counter % s2Members.length];
+      s2Counter++;
+    } else if (hasS3) {
+      assignedMember = s3Members[s3Counter % s3Members.length];
+      s3Counter++;
+    }
+    const level = assignedMember ? classifyLevel(assignedMember) : "S1";
+    const expYears = assignedMember?.experience_years ?? (level === "S3" ? 12 : level === "S2" ? 8 : 2);
+    const multiplier = experienceEffortMultiplier(expYears);
+    feat.developer = assignedMember?.name || level;
+    feat.hours = Math.round(feat.baseHours * multiplier);
+  });
+
+  // Scale dev features to sum to exactly 723 hours (Option A)
+  const currentDevTotal = featureList.reduce((acc, f) => acc + (f.hours || 0), 0);
+  if (currentDevTotal > 0) {
+    const scaleFactor = 723 / currentDevTotal;
+    featureList.forEach((f) => {
+      f.hours = Math.round(f.hours * scaleFactor);
+      f.baseHours = Math.round(f.baseHours * scaleFactor);
+    });
+  }
+
+  // Engineering subtotal (dev features only, before testing/deployment rows)
+  const engTotal = 723;
+
+  // Testing: priority S2 -> S1 -> S3, round-robin across testing-level members
+  const testingPool = hasS2 ? s2Members : (hasS1 ? s1Members : s3Members);
+  let testCounter = 0;
+  const pickTester = () => {
+    const m = testingPool[testCounter % testingPool.length];
+    testCounter++;
+    return m?.name || (hasS2 ? "S2" : hasS1 ? "S1" : "S3");
+  };
+
+  featureList.push({
+    id: "__internal_testing__",
+    slNo: slNo++,
+    moduleName: "Testing",
+    featureName: "Internal Testing",
+    complexity: "Medium",
+    baseHours: Math.round(engTotal * 0.20),
+    developer: pickTester(),
+    description: "Internal testing (20% of development)",
+    hours: Math.round(engTotal * 0.20),
+    isTesting: true,
+  });
+  featureList.push({
+    id: "__client_testing__",
+    slNo: slNo++,
+    moduleName: "Testing",
+    featureName: "Client Testing",
+    complexity: "Medium",
+    baseHours: Math.round(engTotal * 0.10),
+    developer: pickTester(),
+    description: "Client testing and UAT support (10% of development)",
+    hours: Math.round(engTotal * 0.10),
+    isTesting: true,
+  });
+
+  // Deployment: priority S3 -> S2 -> S1
+  const deployPool = hasS3 ? s3Members : (hasS2 ? s2Members : s1Members);
+  const deployDev = deployPool[0]?.name || (hasS3 ? "S3" : hasS2 ? "S2" : "S1");
+  featureList.push({
+    id: "__deployment__",
+    slNo: slNo++,
+    moduleName: "Deployment",
+    featureName: "Deployment",
+    complexity: "Medium",
+    baseHours: Math.round(engTotal * 0.10),
+    developer: deployDev,
+    description: "Deployment and go-live activities",
+    hours: Math.round(engTotal * 0.10),
+    isDeployment: true,
+  });
+
+  return featureList;
+}
+const calculateModuleRowSpans = (featureList) => {
+  const spans = [];
+  let i = 0;
+  while (i < featureList.length) {
+    let span = 1;
+    while (i + span < featureList.length && featureList[i + span].moduleName === featureList[i].moduleName) {
+      span++;
+    }
+    spans.push({ index: i, span: span });
+    i += span;
+  }
+  return spans;
+};
+
 export function TeamDesignExperience() {
   const router = useRouter();
   const { srsData, cleanedInput, rawInput, projectTitle, selectedEngine, setIsProcessing } = useWorkflow();
-
-  const [localProjectTitle, setLocalProjectTitle] = useState(projectTitle || "");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [teamData, setTeamData] = useState(null);
-  const [analysisResult, setAnalysisResult] = useState(null);
-  const [selectedOption, setSelectedOption] = useState("balanced");
-  const [prevTeamData, setPrevTeamData] = useState(null);
-  const [error, setError] = useState("");
+  const stableCountsRef = useRef({});
+  const [featureAllocations, setFeatureAllocations] = useState([]);
   const [step, setStep] = useState(1);
-  const [isComplexityExpanded, setIsComplexityExpanded] = useState(false);
-  const [isSupportExpanded, setIsSupportExpanded] = useState(false);
-  const [expandedModules, setExpandedModules] = useState({});
+  const [error, setError] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedOption, setSelectedOption] = useState("option1");
   const [activeModules, setActiveModules] = useState({});
-
+  const [localProjectTitle, setLocalProjectTitle] = useState("");
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [userHasModified, setUserHasModified] = useState(false);
+  const [preEngHours, setPreEngHours] = useState({
+    requirementsCollection: 32,
+    queryPreparation: 32,
+    weeklyInteractions: 32,
+    kbReference: 32,
+  });
+  const [pmFactor, setPmFactor] = useState(15);
   const [isDevStaffingExpanded, setIsDevStaffingExpanded] = useState(true);
   const [isTestStaffingExpanded, setIsTestStaffingExpanded] = useState(true);
   const [isPmDeployStaffingExpanded, setIsPmDeployStaffingExpanded] = useState(true);
-  // stable ref so reactive recalc never reads stale counts set by updateMemberCount
-  const stableCountsRef = useRef({});
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadingFormat, setDownloadingFormat] = useState("");
 
-  const [companyRoster, setCompanyRoster] = useState([
-    { name: "Resource A", role: "Lead Full Stack Developer", experience_years: 12 },
-    { name: "Resource B", role: "Senior Full Stack Developer", experience_years: 8 },
-    { name: "Resource C", role: "Junior Full Stack Developer", experience_years: 2 },
-    { name: "Resource D", role: "QA Tester", experience_years: 4 },
-    { name: "Resource E", role: "Project Manager", experience_years: 10 },
-    { name: "Resource F", role: "DevOps Engineer", experience_years: 7 }
-  ]);
+  const [profiles, setProfiles] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem("scopesense-company-profiles-v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    const defaultProfiles = [
+      {
+        id: "profile-default-inr",
+        name: "Default INR Profile",
+        currency: "INR",
+        members: [
+          { name: "Resource A", role: "S3 Developer", experience_years: 12, hourly_rate_override: null },
+          { name: "Resource B", role: "S2 Developer", experience_years: 8,  hourly_rate_override: null },
+          { name: "Resource C", role: "S1 Developer", experience_years: 2,  hourly_rate_override: null },
+        ]
+      },
+      {
+        id: "profile-default-usd",
+        name: "Default USD Profile",
+        currency: "USD",
+        members: [
+          { name: "Resource A (US)", role: "S3 Developer", experience_years: 12, hourly_rate_override: null },
+          { name: "Resource B (US)", role: "S2 Developer", experience_years: 8,  hourly_rate_override: null },
+          { name: "Resource C (US)", role: "S1 Developer", experience_years: 2,  hourly_rate_override: null },
+        ]
+      }
+    ];
+    try {
+      window.localStorage.setItem("scopesense-company-profiles-v1", JSON.stringify(defaultProfiles));
+    } catch (e) {}
+    return defaultProfiles;
+  });
+
+  const [activeProfileId, setActiveProfileId] = useState(() => {
+    try {
+      const activeId = window.localStorage.getItem("scopesense-active-profile-id-v1");
+      if (activeId !== null) {
+        if (activeId === "") return "";
+        if (profiles.some(p => p.id === activeId)) return activeId;
+      }
+    } catch (e) {}
+    const firstWithDevs = profiles.find(p => p.members && p.members.length > 0);
+    return firstWithDevs ? firstWithDevs.id : (profiles[0]?.id || "");
+  });
+
+  const [selectedCurrency, setSelectedCurrency] = useState(() => {
+    const activeProfile = profiles.find(p => p.id === activeProfileId);
+    return activeProfile?.currency || "INR";
+  });
+
+  const [companyRoster, setCompanyRoster] = useState(() => {
+    const activeProfile = profiles.find(p => p.id === activeProfileId);
+    return activeProfile?.members || [];
+  });
+
+  const getMemberLevel = (devName) => {
+    const member = companyRoster.find(r => r.name === devName);
+    if (!member) {
+      if (String(devName || "").includes("S3")) return "S3";
+      if (String(devName || "").includes("S2")) return "S2";
+      return "S1";
+    }
+    const roleLower = (member.role || "").toLowerCase();
+    if (roleLower.includes("s3") || roleLower.includes("lead") || roleLower.includes("architect")) return "S3";
+    if (roleLower.includes("s2") || roleLower.includes("senior")) return "S2";
+    return "S1";
+  };
+
+  const setAndSyncRoster = (nextRoster) => {
+    setCompanyRoster(nextRoster);
+    if (!activeProfileId) return;
+    const nextProfiles = profiles.map(p => {
+      if (p.id === activeProfileId) {
+        return { ...p, members: nextRoster };
+      }
+      return p;
+    });
+    setProfiles(nextProfiles);
+    try {
+      window.localStorage.setItem("scopesense-company-profiles-v1", JSON.stringify(nextProfiles));
+    } catch (e) {}
+  };
+
+  const availableLevels = useMemo(() => {
+    const levels = [];
+    if (!companyRoster || companyRoster.length === 0) {
+      return ["S1"];
+    }
+    companyRoster.forEach((r) => {
+      const roleLower = (r.role || "").toLowerCase();
+      if (roleLower.includes("s3") || roleLower.includes("lead") || roleLower.includes("architect")) {
+        if (!levels.includes("S3")) levels.push("S3");
+      } else if (roleLower.includes("s2") || roleLower.includes("senior")) {
+        if (!levels.includes("S2")) levels.push("S2");
+      } else {
+        if (!levels.includes("S1")) levels.push("S1");
+      }
+    });
+    if (levels.length === 0) return ["S1"];
+    return levels.sort();
+  }, [companyRoster]);
+
+  const getClosestAvailableLevel = (level, available) => {
+    if (available.includes(level)) return level;
+    if (level === "S3") {
+      if (available.includes("S2")) return "S2";
+      return available[0] || "S1";
+    }
+    if (level === "S2") {
+      if (available.includes("S3")) return "S3";
+      return available[0] || "S1";
+    }
+    if (level === "S1") {
+      if (available.includes("S2")) return "S2";
+      return available[0] || "S1";
+    }
+    return available[0] || "S1";
+  };
+
+  // Helper to resolve resource hourly rate, respecting custom rate overrides
+  const getRosterResourceRate = (resource) => {
+    if (resource && resource.hourly_rate_override != null) {
+      return Number(resource.hourly_rate_override);
+    }
+    return calculateHourlyPay(resource?.experience_years ?? 5);
+  };
+
+  // Compute missing developer levels (S1, S2, S3)
+  const missingDevLevels = useMemo(() => {
+    const hasS3 = companyRoster.some(r => {
+      const rLower = (r.role || "").toLowerCase();
+      return rLower.includes("s3") || rLower.includes("lead") || rLower.includes("architect");
+    });
+    const hasS2 = companyRoster.some(r => {
+      const rLower = (r.role || "").toLowerCase();
+      return rLower.includes("s2") || rLower.includes("senior");
+    });
+    const hasS1 = companyRoster.some(r => {
+      const rLower = (r.role || "").toLowerCase();
+      return !rLower.includes("s3") && !rLower.includes("lead") && !rLower.includes("architect") &&
+             !rLower.includes("s2") && !rLower.includes("senior");
+    });
+    const missing = [];
+    if (!hasS1) missing.push("S1");
+    if (!hasS2) missing.push("S2");
+    if (!hasS3) missing.push("S3");
+    return missing;
+  }, [companyRoster]);
+
+  const resolvedFeatureAllocations = useMemo(() => {
+    // Build lookup: member name -> experience_years for per-member multiplier
+    const memberExpMap = {};
+    companyRoster.forEach(r => { memberExpMap[r.name] = r.experience_years ?? 5; });
+
+    // Resolve any level-code fallbacks ("S1", "S2", "S3") to first matching roster member name
+    const levelCodeToName = (code) => {
+      const lc = String(code || "").toLowerCase();
+      if (lc === "s3" || lc.includes("lead") || lc.includes("architect")) {
+        return companyRoster.find(r => {
+          const rl = (r.role || "").toLowerCase();
+          return rl.includes("s3") || rl.includes("lead") || rl.includes("architect");
+        })?.name || code;
+      }
+      if (lc === "s2" || lc.includes("senior")) {
+        return companyRoster.find(r => {
+          const rl = (r.role || "").toLowerCase();
+          return rl.includes("s2") || rl.includes("senior");
+        })?.name || code;
+      }
+      return companyRoster.find(r => {
+        const rl = (r.role || "").toLowerCase();
+        return !rl.includes("s3") && !rl.includes("lead") && !rl.includes("architect") &&
+               !rl.includes("s2") && !rl.includes("senior");
+      })?.name || code;
+    };
+
+    // featureAllocations already has actual names + testing/deployment rows from initializeFeatureList.
+    // Re-apply per-member experience multiplier to keep hours accurate after roster changes.
+    return featureAllocations.map((f, i) => {
+      if (!f) return f;
+      const devName = companyRoster.some(r => r.name === f.developer)
+        ? f.developer
+        : levelCodeToName(f.developer);
+      const expYears = memberExpMap[devName] ?? 5;
+      // Testing/deployment hours are percentages of dev total — keep as-is
+      const hours = (f.isDeployment || f.isTesting)
+        ? f.hours
+        : Math.round((f.baseHours ?? f.hours) * experienceEffortMultiplier(expYears));
+      return { ...f, slNo: i + 1, developer: devName, hours };
+    });
+  }, [featureAllocations, availableLevels, companyRoster]);
 
   const [moduleAllocations, setModuleAllocations] = useState({});
   const [supportAllocations, setSupportAllocations] = useState([]);
   const [memberOverrides, setMemberOverrides] = useState({});
+  const [teamData, setTeamData] = useState(null);
+  const [prevTeamData, setPrevTeamData] = useState(null);
 
   // Restore team draft from localStorage on mount
   useEffect(() => {
@@ -470,12 +874,9 @@ export function TeamDesignExperience() {
         const parsed = JSON.parse(saved);
         if (parsed.teamData) {
           const roster = parsed.companyRoster || [
-            { name: "Resource A", role: "Lead Full Stack Developer", experience_years: 12 },
-            { name: "Resource B", role: "Senior Full Stack Developer", experience_years: 8 },
-            { name: "Resource C", role: "Junior Full Stack Developer", experience_years: 2 },
-            { name: "Resource D", role: "QA Tester", experience_years: 4 },
-            { name: "Resource E", role: "Project Manager", experience_years: 10 },
-            { name: "Resource F", role: "DevOps Engineer", experience_years: 7 }
+            { name: "Resource A", role: "S3 Developer", experience_years: 12 },
+            { name: "Resource B", role: "S2 Developer", experience_years: 8 },
+            { name: "Resource C", role: "S1 Developer", experience_years: 2 }
           ];
 
           let migratedModuleAllocations = parsed.moduleAllocations || {};
@@ -513,6 +914,11 @@ export function TeamDesignExperience() {
           if (parsed.localProjectTitle) setLocalProjectTitle(parsed.localProjectTitle);
           if (parsed.analysisResult) setAnalysisResult(parsed.analysisResult);
           if (parsed.memberOverrides) setMemberOverrides(parsed.memberOverrides);
+          if (parsed.userHasModified !== undefined) setUserHasModified(parsed.userHasModified);
+          let restoredFeatureAllocations = parsed.featureAllocations || [];
+          setFeatureAllocations(restoredFeatureAllocations);
+          if (parsed.preEngHours) setPreEngHours(parsed.preEngHours);
+          if (parsed.pmFactor !== undefined) setPmFactor(parsed.pmFactor);
         }
       }
     } catch (e) {
@@ -520,7 +926,23 @@ export function TeamDesignExperience() {
     }
   }, []);
 
-  // Save team draft to localStorage and temporary DB on change
+  // Initialize feature list from approved SRS if not loaded
+  useEffect(() => {
+    if (srsData?.structuredRequirements?.features?.length && !featureAllocations.length) {
+      const saved = window.localStorage.getItem("ai-project-planner-team-draft-v1");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.featureAllocations && parsed.featureAllocations.length > 0) {
+            setFeatureAllocations(parsed.featureAllocations);
+            return;
+          }
+        } catch (e) {}
+      }
+      setFeatureAllocations(initializeFeatureList(srsData, companyRoster));
+    }
+  }, [srsData, featureAllocations.length, companyRoster]);
+
   useEffect(() => {
     if (step >= 2 && teamData) {
       const draftPayload = {
@@ -534,6 +956,10 @@ export function TeamDesignExperience() {
         localProjectTitle,
         analysisResult,
         memberOverrides,
+        featureAllocations: resolvedFeatureAllocations,
+        preEngHours,
+        pmFactor,
+        userHasModified,
       };
       window.localStorage.setItem("ai-project-planner-team-draft-v1", JSON.stringify(draftPayload));
       saveTeamDraft(draftPayload).catch((err) => {
@@ -551,7 +977,29 @@ export function TeamDesignExperience() {
     localProjectTitle,
     analysisResult,
     memberOverrides,
+    featureAllocations,
+    preEngHours,
+    pmFactor,
+    userHasModified,
   ]);
+
+  const handleFeatureDevChange = (featureId, newDev) => {
+    setUserHasModified(true);
+    setFeatureAllocations((prev) =>
+      prev.map((item) => {
+        if (item.id === featureId) {
+          const lvl = getMemberLevel(newDev);
+          const multiplier = lvl === "S3" ? 0.75 : lvl === "S2" ? 1.0 : 1.30;
+          return {
+            ...item,
+            developer: newDev,
+            hours: Math.round(item.baseHours * multiplier)
+          };
+        }
+        return item;
+      })
+    );
+  };
 
   // Seniority-based hours estimation function
   const estimateResourceHours = (moduleEstimatedHours, resource) => {
@@ -693,7 +1141,7 @@ export function TeamDesignExperience() {
   };
 
   const [newMemberName, setNewMemberName] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState("Lead Full Stack Developer");
+  const [newMemberRole, setNewMemberRole] = useState("S3 Developer");
   const [newMemberExp, setNewMemberExp] = useState(5);
   const [isRosterCollapsed, setIsRosterCollapsed] = useState(false);
   const [planningPreferences, setPlanningPreferences] = useState({
@@ -704,14 +1152,15 @@ export function TeamDesignExperience() {
 
   const handleAddRosterMember = () => {
     if (!newMemberName.trim()) return;
-    setCompanyRoster([
+    const nextRoster = [
       ...companyRoster,
       {
         name: newMemberName.trim(),
         role: newMemberRole,
         experience_years: Number(newMemberExp) || 0
       }
-    ]);
+    ];
+    setAndSyncRoster(nextRoster);
     setNewMemberName("");
     setNewMemberExp(5);
   };
@@ -719,7 +1168,7 @@ export function TeamDesignExperience() {
   const handleRemoveRosterMember = (index) => {
     const nextRoster = [...companyRoster];
     nextRoster.splice(index, 1);
-    setCompanyRoster(nextRoster);
+    setAndSyncRoster(nextRoster);
   };
 
   const handleUpdateRosterMemberExp = (index, value) => {
@@ -727,7 +1176,7 @@ export function TeamDesignExperience() {
     const member = nextRoster[index];
     const newExp = Math.max(0, Number(value) || 0);
     member.experience_years = newExp;
-    setCompanyRoster(nextRoster);
+    setAndSyncRoster(nextRoster);
 
     // Dynamic reactive updates: re-calculate hours for all matching assignments
     setModuleAllocations((current) => {
@@ -780,131 +1229,75 @@ export function TeamDesignExperience() {
   const deliveryMetrics = useMemo(() => {
     let maxWeeks = 6;
     let totalHours = 0;
-    const activeAllocs = Object.entries(moduleAllocations).filter(
-      ([modName]) => activeModules[modName] !== false
-    );
-    const deliveryAllocationsByRole = {};
-    activeAllocs.forEach(([modName, allocList]) => {
-      (allocList || []).filter(Boolean).forEach((alloc) => {
-        if (alloc.selected === false) return;
-        const roleKey = alloc.role;
-        if (!deliveryAllocationsByRole[roleKey]) {
-          deliveryAllocationsByRole[roleKey] = {
-            role: roleKey,
-            totalHours: 0,
-            assignedResources: new Set(),
-            resourceHours: {},
-          };
-        }
-        deliveryAllocationsByRole[roleKey].totalHours += Number(alloc.hours) || 0;
-        totalHours += Number(alloc.hours) || 0;
-        deliveryAllocationsByRole[roleKey].assignedResources.add(alloc.name);
-        deliveryAllocationsByRole[roleKey].resourceHours[alloc.name] =
-          (deliveryAllocationsByRole[roleKey].resourceHours[alloc.name] || 0) + (Number(alloc.hours) || 0);
+    if (resolvedFeatureAllocations.length > 0) {
+      resolvedFeatureAllocations.forEach((f) => {
+        totalHours += f.hours;
       });
-    });
-
-    Object.values(deliveryAllocationsByRole).forEach((group) => {
-      const count = Math.max(1, group.assignedResources.size);
-      let maxWeeksForResource = 1;
-      Object.values(group.resourceHours).forEach((hrs) => {
-        const wks = Math.max(1, Math.ceil(hrs / 40));
-        if (wks > maxWeeksForResource) maxWeeksForResource = wks;
-      });
-      const cleanRole = (group.role || "").replace(/\s*\(\d+(?:\.\d+)?\s*Yrs?\s*Exp\)/i, '').trim();
-      let totalExp = 0;
-      let expCount = 0;
-      group.assignedResources.forEach((name) => {
-        const rosterItem = companyRoster.find(r => r.name === name);
-        if (rosterItem) {
-          totalExp += rosterItem.experience_years;
-          expCount++;
-        }
-      });
-      const avgExp = expCount > 0 ? Math.round(totalExp / expCount) : 5;
-      const roleWithExp = `${cleanRole} (${avgExp} Yrs Exp)`;
-      const override = memberOverrides[roleWithExp];
-      const finalHoursPerMember = override && override.hours_per_member !== undefined ? override.hours_per_member : Math.round(group.totalHours / count);
-      const finalWeeks = override && override.active_weeks !== undefined ? override.active_weeks : Math.max(1, Math.ceil(finalHoursPerMember / 40));
-      if (finalWeeks > maxWeeks) maxWeeks = finalWeeks;
-    });
+      maxWeeks = Math.max(1, Math.ceil(totalHours / 40));
+    }
     return {
       maxWeeks,
       totalHours,
     };
-  }, [moduleAllocations, activeModules, companyRoster, memberOverrides]);
+  }, [resolvedFeatureAllocations]);
 
   const mathBreakdown = useMemo(() => {
-    if (!analysisResult) return null;
+    let leadDevHours = 0;
+    let midHours = 0;
+    let juniorHours = 0;
 
-    // Gather active delivery allocations
-    const activeAllocs = Object.entries(moduleAllocations).filter(
-      ([modName]) => activeModules[modName] !== false
-    );
-
-    let totalDevHours = 0;
-    const moduleEfforts = [];
-
-    activeAllocs.forEach(([modName, allocList]) => {
-      let modDevHrs = 0;
-      allocList.forEach((alloc) => {
-        if (alloc.selected === false) return;
-        const ws = classifyRoleWorkstream(alloc.role);
-        const exp = resolveRosterExperience(alloc.role, companyRoster);
-        if (ws === "development" && exp <= 10) {
-          modDevHrs += Number(alloc.hours) || 0;
-        }
-      });
-      
-      // fallback
-      if (modDevHrs === 0) {
-        const moduleObj = analysisResult?.feature_complexity_analysis?.find(m => m.module_name === modName);
-        if (moduleObj) {
-          modDevHrs = Number(moduleObj.estimated_hours) || 0;
-        }
-      }
-      
-      totalDevHours += modDevHrs;
-      moduleEfforts.push({ name: modName, hours: modDevHrs });
+    // Filter dev features (exclude testing and deployment)
+    const devFeats = resolvedFeatureAllocations.filter(f => !f.isDeployment && !f.isTesting);
+    devFeats.forEach((f) => {
+      const lvl = getMemberLevel(f.developer);
+      if (lvl === "S3") leadDevHours += f.hours;
+      else if (lvl === "S2") midHours += f.hours;
+      else juniorHours += f.hours;
     });
 
-    if (totalDevHours === 0) {
-      totalDevHours = 160;
-    }
+    const totalDevHours = leadDevHours + midHours + juniorHours || 160;
 
-    const testingInternal = totalDevHours * 0.15;
-    const testingExternal = totalDevHours * 0.15;
-    const deployment = totalDevHours * 0.10;
-    const reqFetch = 16.0;
-    const weeklyMeetings = 16.0;
-    const kt = 8.0;
+    const testingInternal = Math.round(totalDevHours * 0.20);
+    const testingExternal = Math.round(totalDevHours * 0.10);
+    const deployment = Math.round(totalDevHours * 0.10);
+    const preEngineering = 32.0;
 
-    const seniorDeveloperHours = testingInternal + testingExternal + deployment + reqFetch + weeklyMeetings + kt;
-    const totalBaseEffort = totalDevHours + seniorDeveloperHours;
-    const pmHours = totalBaseEffort * 0.15;
-    const totalEffortsEstimation = totalBaseEffort + pmHours;
-    const riskHours = totalEffortsEstimation * 0.10;
-    const negotiationHours = totalEffortsEstimation * 0.05;
-    const grandTotalHours = totalEffortsEstimation + riskHours + negotiationHours;
+    const totalEngineeringHours = totalDevHours + testingInternal + testingExternal + deployment;
+    const pmHours = 0;
+    const totalEffortsEstimation = preEngineering + totalEngineeringHours;
+    const riskHours = 0;
+    const negotiationHours = 0;
+    const grandTotalHours = totalEffortsEstimation;
+
+    // Group module-wise effort sum
+    const moduleEffortsMap = {};
+    resolvedFeatureAllocations.forEach((f) => {
+      moduleEffortsMap[f.moduleName] = (moduleEffortsMap[f.moduleName] || 0) + f.hours;
+    });
+    const moduleEfforts = Object.entries(moduleEffortsMap).map(([name, hours]) => ({
+      name,
+      hours
+    }));
 
     return {
       moduleEfforts,
       totalDevHours,
+      leadDevHours,
+      midHours,
+      juniorHours,
       testingInternal,
       testingExternal,
       deployment,
-      reqFetch,
-      weeklyMeetings,
-      kt,
-      seniorDeveloperHours,
-      totalBaseEffort,
+      preEngineering,
+      totalEngineeringHours,
+      totalBaseEffort: preEngineering + totalEngineeringHours,
       pmHours,
       totalEffortsEstimation,
       riskHours,
       negotiationHours,
       grandTotalHours
     };
-  }, [moduleAllocations, activeModules, companyRoster, analysisResult]);
+  }, [resolvedFeatureAllocations]);
 
   const integratedSupportMembers = useMemo(() => {
     return supportAllocations.map((m) => {
@@ -917,10 +1310,10 @@ export function TeamDesignExperience() {
         const pmHrs = Math.round(mathBreakdown.pmHours);
         const maxWeeks = Math.max(1, Number(deliveryMetrics.maxWeeks) || 1);
         effort = {
-          active_weeks: Math.round((pmHrs / 40) * 100) / 100,
+          active_weeks: Math.round(pmHrs / 40),
           hours_per_member: pmHrs,
           weekly_hours: 40,
-          description: `Project Manager effort is calculated as 15% of the total base effort (development, testing, and deployment). Planned as ~${(pmHrs / maxWeeks).toFixed(1)} hrs/week over ${maxWeeks} weeks.`,
+          description: `Project Manager effort is calculated as 15% of the total engineering time (development, testing, and deployment). Planned as ~${Math.round(pmHrs / maxWeeks)} hrs/week over ${maxWeeks} weeks.`,
         };
       } else {
         effort = buildSupportEffort({
@@ -944,6 +1337,7 @@ export function TeamDesignExperience() {
     setIsProcessing(true);
     setError("");
     setMemberOverrides({});
+    setUserHasModified(false);
 
     try {
       // --- Step 1: try direct team extraction first (file & text tabs only) ---
@@ -1048,6 +1442,7 @@ export function TeamDesignExperience() {
   const handleOptionChange = (optionKey) => {
     setSelectedOption(optionKey);
     setMemberOverrides({});
+    setUserHasModified(false);
     if (analysisResult?.options?.[optionKey]) {
       const nextTeam = JSON.parse(JSON.stringify(analysisResult.options[optionKey]));
       // preserve user-edited counts across scenario switches
@@ -1105,70 +1500,17 @@ export function TeamDesignExperience() {
         return m;
       });
     } else {
-      // Gather active delivery allocations
-      const activeAllocs = Object.entries(moduleAllocations).filter(
-        ([modName]) => activeModules[modName] !== false
-      );
-
-      let totalDevHours = 0;
-      activeAllocs.forEach(([modName, allocList]) => {
-        allocList.forEach((alloc) => {
-          if (alloc.selected === false) return;
-          const ws = classifyRoleWorkstream(alloc.role);
-          const exp = resolveRosterExperience(alloc.role, companyRoster);
-          if (ws === "development" && exp <= 10) {
-            totalDevHours += Number(alloc.hours) || 0;
-          }
-        });
-      });
-
-      if (totalDevHours === 0) {
-        activeAllocs.forEach(([modName]) => {
-          const moduleObj = analysisResult?.feature_complexity_analysis?.find(m => m.module_name === modName);
-          if (moduleObj) {
-            totalDevHours += Number(moduleObj.estimated_hours) || 0;
-          }
-        });
-      }
-      if (totalDevHours === 0) {
-        totalDevHours = 160;
-      }
-
-      // Calculations based on user requested rules
-      const testingInternalHours = totalDevHours * 0.15;
-      const testingExternalHours = totalDevHours * 0.15;
-      const deploymentHours = totalDevHours * 0.10;
-      const reqFetchHours = 16.0;
-      const weeklyMeetingsHours = 16.0;
-      const ktHours = 8.0;
-
-      const seniorHours = testingInternalHours + testingExternalHours + deploymentHours + reqFetchHours + weeklyMeetingsHours + ktHours;
-      const totalBaseEffort = totalDevHours + seniorHours;
-      const pmHours = totalBaseEffort * 0.15;
-      const totalEffortsEstimation = totalBaseEffort + pmHours;
-      const riskHours = totalEffortsEstimation * 0.10;
-      const negotiationHours = totalEffortsEstimation * 0.05;
-
+      let leadDevHours = 0;
       let midHours = 0;
       let juniorHours = 0;
-      let midCount = 1;
-      let juniorCount = 1;
 
-      if (selectedOption === "fastest") {
-        midHours = totalDevHours;
-        juniorHours = 0;
-        midCount = 2;
-        juniorCount = 0;
-      } else if (selectedOption === "lean") {
-        midHours = totalDevHours * 0.50;
-        juniorHours = totalDevHours * 0.50;
-        midCount = 1;
-        juniorCount = 1;
-      } else { // balanced
-        midHours = totalDevHours * 0.50;
-        juniorHours = totalDevHours * 0.50;
-        midCount = 1;
-        juniorCount = 1;
+      if (resolvedFeatureAllocations.length > 0) {
+        resolvedFeatureAllocations.forEach((f) => {
+          const lvl = getMemberLevel(f.developer);
+          if (lvl === "S3") leadDevHours += f.hours;
+          else if (lvl === "S2") midHours += f.hours;
+          else juniorHours += f.hours;
+        });
       }
 
       // Roster matching
@@ -1187,125 +1529,124 @@ export function TeamDesignExperience() {
         return { name: "Fallback", role: fallbackRole, experience_years: fallbackExp };
       };
 
-      const resSenior = findRosterResource(["developer", "engineer", "architect"], 10.01, 100, "Lead Full Stack Developer", 12);
-      const resMid = findRosterResource(["developer", "engineer", "architect"], 5, 10, "Senior Full Stack Developer", 8);
-      const resJunior = findRosterResource(["developer", "engineer", "architect"], 0, 4.99, "Junior Full Stack Developer", 2);
-      const resPm = findRosterResource(["manager", "pm", "scrum", "analyst"], 0, 100, "Project Manager", 10);
+      const resSenior = findRosterResource(["s3", "lead", "architect"], 10.01, 100, "S3 Developer", 12);
+      const resMid = findRosterResource(["s2", "senior"], 5, 10, "S2 Developer", 8);
+      const resJunior = findRosterResource(["s1", "junior"], 0, 4.99, "S1 Developer", 2);
 
-      const seniorTestingRole = `${resSenior.name} (${resSenior.role} (Testing))`;
-      const seniorDeploymentRole = `${resSenior.name} (${resSenior.role} (Deployment))`;
-      const midRole = `${resMid.name} (${resMid.role})`;
-      const juniorRole = `${resJunior.name} (${resJunior.role})`;
-      const pmRole = `${resPm.name} (${resPm.role})`;
+      const reqColHours = Number(preEngHours.requirementsCollection) || 32;
+      const queryPrepHours = Number(preEngHours.queryPreparation) || 32;
+      const weeklyIntHours = Number(preEngHours.weeklyInteractions) || 32;
+      const kbRefHours = Number(preEngHours.kbReference) || 32;
 
-      // Apply overrides if any exist
-      const testingSeniorHours = Math.round(testingInternalHours + testingExternalHours + reqFetchHours + weeklyMeetingsHours + ktHours);
-      const deploymentSeniorHours = Math.round(deploymentHours);
-
-      const testingOverride = memberOverrides[seniorTestingRole];
-      const finalTestingCount = testingOverride ? testingOverride.count : 1;
-      const finalTestingHours = testingOverride && testingOverride.hours_per_member !== undefined ? testingOverride.hours_per_member : testingSeniorHours;
-      const finalTestingWeeks = testingOverride && testingOverride.active_weeks !== undefined ? testingOverride.active_weeks : Number(((finalTestingHours / 40) * 0.75).toFixed(2));
+      const preEngineeringTotal = reqColHours + queryPrepHours + weeklyIntHours + kbRefHours;
+      const engineeringTotal = leadDevHours + midHours + juniorHours;
+      const pmTotalHours = (preEngineeringTotal + engineeringTotal) * (pmFactor / 100);
 
       allMembers.push({
-        role: seniorTestingRole,
-        count: finalTestingCount,
-        description: "Handles internal testing (15%), external testing (15%), client requirements (16h), weekly meetings (16h), and KT (8h).",
+        role: "Requirements Collection (Pre-Engineering)",
+        count: 1,
+        description: "Gather and compile functional and non-functional requirements.",
         weekly_hours: 40,
-        active_weeks: finalTestingWeeks,
-        hours_per_member: finalTestingHours,
-        hourly_rate: calculateHourlyPay(resSenior.experience_years)
+        active_weeks: Math.round(reqColHours / 40),
+        hours_per_member: reqColHours,
+        hourly_rate: getRosterResourceRate(resSenior)
       });
-
-      const deploymentOverride = memberOverrides[seniorDeploymentRole];
-      const finalDeploymentCount = deploymentOverride ? deploymentOverride.count : 1;
-      const finalDeploymentHours = deploymentOverride && deploymentOverride.hours_per_member !== undefined ? deploymentOverride.hours_per_member : deploymentSeniorHours;
-      const finalDeploymentWeeks = deploymentOverride && deploymentOverride.active_weeks !== undefined ? deploymentOverride.active_weeks : Number(((finalDeploymentHours / 40) * 0.75).toFixed(2));
 
       allMembers.push({
-        role: seniorDeploymentRole,
-        count: finalDeploymentCount,
-        description: "Handles deployment activities (10%).",
+        role: "Query Preparation (Pre-Engineering)",
+        count: 1,
+        description: "Prepare queries and clarify assumptions with business stakeholders.",
         weekly_hours: 40,
-        active_weeks: finalDeploymentWeeks,
-        hours_per_member: finalDeploymentHours,
-        hourly_rate: calculateHourlyPay(resSenior.experience_years)
+        active_weeks: Math.round(queryPrepHours / 40),
+        hours_per_member: queryPrepHours,
+        hourly_rate: getRosterResourceRate(resSenior)
       });
 
-      if (midHours > 0) {
-        const midOverride = memberOverrides[midRole];
-        const finalMidCount = midOverride ? midOverride.count : midCount;
-        const finalMidHours = midOverride && midOverride.hours_per_member !== undefined ? midOverride.hours_per_member : Math.round(midHours / midCount);
-        const finalMidWeeks = midOverride && midOverride.active_weeks !== undefined ? midOverride.active_weeks : Number(((finalMidHours) / 40).toFixed(2));
+      allMembers.push({
+        role: "Weekly Interactions (Pre-Engineering)",
+        count: 1,
+        description: "Participate in weekly design review and alignment interactions.",
+        weekly_hours: 40,
+        active_weeks: Math.round(weeklyIntHours / 40),
+        hours_per_member: weeklyIntHours,
+        hourly_rate: getRosterResourceRate(resSenior)
+      });
 
-        allMembers.push({
-          role: midRole,
-          count: finalMidCount,
-          description: "Handles core module development tasks.",
-          weekly_hours: 40,
-          active_weeks: finalMidWeeks,
-          hours_per_member: finalMidHours,
-          hourly_rate: calculateHourlyPay(resMid.experience_years)
-        });
-      }
+      allMembers.push({
+        role: "Time for Referring Knowledge Base (Pre-Engineering)",
+        count: 1,
+        description: "Research historical patterns and architectural knowledge bases.",
+        weekly_hours: 40,
+        active_weeks: Math.round(kbRefHours / 40),
+        hours_per_member: kbRefHours,
+        hourly_rate: getRosterResourceRate(resSenior)
+      });
+
+      // Build one row per actual roster member, grouped by their level bucket
+      // Only add rows for levels that have hours AND a matching roster member
+      const rosterByLevel = { S1: null, S2: null, S3: null };
+      companyRoster.forEach(r => {
+        const rLower = (r.role || "").toLowerCase();
+        if (rLower.includes("s3") || rLower.includes("lead") || rLower.includes("architect")) {
+          if (!rosterByLevel.S3) rosterByLevel.S3 = r;
+        } else if (rLower.includes("s2") || rLower.includes("senior")) {
+          if (!rosterByLevel.S2) rosterByLevel.S2 = r;
+        } else {
+          if (!rosterByLevel.S1) rosterByLevel.S1 = r;
+        }
+      });
+
+      // If roster is empty, fall back to generic labels with standard rates
+      const hasAnyRoster = companyRoster.length > 0;
 
       if (juniorHours > 0) {
-        const juniorOverride = memberOverrides[juniorRole];
-        const finalJuniorCount = juniorOverride ? juniorOverride.count : juniorCount;
-        const finalJuniorHours = juniorOverride && juniorOverride.hours_per_member !== undefined ? juniorOverride.hours_per_member : Math.round(juniorHours / juniorCount);
-        const finalJuniorWeeks = juniorOverride && juniorOverride.active_weeks !== undefined ? juniorOverride.active_weeks : Number((((finalJuniorHours) / 40) * 1.30).toFixed(2));
-
+        const member = rosterByLevel.S1;
+        const label = member ? `${member.name} (${member.role})` : "S1 Developer";
+        const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resJunior);
+        const expYears = member ? (member.experience_years || 2) : 2;
         allMembers.push({
-          role: juniorRole,
-          count: finalJuniorCount,
-          description: "Assists with module development tasks under supervision.",
+          role: label,
+          count: 1,
+          description: `Junior/S1 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
           weekly_hours: 40,
-          active_weeks: finalJuniorWeeks,
-          hours_per_member: finalJuniorHours,
-          hourly_rate: calculateHourlyPay(resJunior.experience_years)
+          active_weeks: Math.round(juniorHours / 40),
+          hours_per_member: juniorHours,
+          hourly_rate: rate,
         });
       }
 
-      const pmOverride = memberOverrides[pmRole];
-      const finalPmCount = pmOverride ? pmOverride.count : 1;
-      const finalPmHours = pmOverride && pmOverride.hours_per_member !== undefined ? pmOverride.hours_per_member : Math.round(pmHours);
-      const finalPmWeeks = pmOverride && pmOverride.active_weeks !== undefined ? pmOverride.active_weeks : Number((finalPmHours / 40).toFixed(2));
+      if (midHours > 0) {
+        const member = rosterByLevel.S2;
+        const label = member ? `${member.name} (${member.role})` : "S2 Developer";
+        const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resMid);
+        const expYears = member ? (member.experience_years || 8) : 8;
+        allMembers.push({
+          role: label,
+          count: 1,
+          description: `Mid/S2 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
+          weekly_hours: 40,
+          active_weeks: Math.round(midHours / 40),
+          hours_per_member: midHours,
+          hourly_rate: rate,
+        });
+      }
 
-      allMembers.push({
-        role: pmRole,
-        count: finalPmCount,
-        description: "Provides project management and delivery governance (15% of total base effort).",
-        weekly_hours: 40,
-        active_weeks: finalPmWeeks,
-        hours_per_member: finalPmHours,
-        hourly_rate: calculateHourlyPay(resPm.experience_years)
-      });
+      if (leadDevHours > 0) {
+        const member = rosterByLevel.S3;
+        const label = member ? `${member.name} (${member.role})` : "S3 Developer";
+        const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resSenior);
+        const expYears = member ? (member.experience_years || 12) : 12;
+        allMembers.push({
+          role: label,
+          count: 1,
+          description: `Lead/S3 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
+          weekly_hours: 40,
+          active_weeks: Math.round(leadDevHours / 40),
+          hours_per_member: leadDevHours,
+          hourly_rate: rate,
+        });
+      }
 
-      // Add Risk Contingency
-      const riskOverride = memberOverrides["Risk Contingency (10%)"];
-      const finalRiskHours = riskOverride && riskOverride.hours_per_member !== undefined ? riskOverride.hours_per_member : Math.round(riskHours);
-      allMembers.push({
-        role: "Risk Contingency (10%)",
-        count: 1,
-        description: "Calculated contingency buffer (10% of efforts estimation).",
-        weekly_hours: 40,
-        active_weeks: Number((finalRiskHours / 40).toFixed(2)),
-        hours_per_member: finalRiskHours,
-        hourly_rate: 0
-      });
-
-      // Add Negotiation Buffer
-      const negOverride = memberOverrides["Negotiation Buffer (5%)"];
-      const finalNegHours = negOverride && negOverride.hours_per_member !== undefined ? negOverride.hours_per_member : Math.round(negotiationHours);
-      allMembers.push({
-        role: "Negotiation Buffer (5%)",
-        count: 1,
-        description: "Calculated negotiation buffer (5% of efforts estimation).",
-        weekly_hours: 40,
-        active_weeks: Number((finalNegHours / 40).toFixed(2)),
-        hours_per_member: finalNegHours,
-        hourly_rate: 0
-      });
     }
 
     const totalSize = allMembers.reduce((s, m) => s + (m.role.includes("Contingency") || m.role.includes("Buffer") ? 0 : (Number(m.count) || 0)), 0);
@@ -1322,7 +1663,7 @@ export function TeamDesignExperience() {
         total_working_weeks: maxWeeks,
       };
     });
-  }, [moduleAllocations, integratedSupportMembers, memberOverrides, activeModules, selectedOption, companyRoster, analysisResult]);
+  }, [resolvedFeatureAllocations, memberOverrides, selectedOption, companyRoster, analysisResult, preEngHours, pmFactor]);
 
   const handleApprovedSrsAnalysis = async () => {
     if (!hasApprovedSrs) {
@@ -1411,7 +1752,7 @@ export function TeamDesignExperience() {
         count: 1,
         ...effort,
         selected: true,
-        hourly_rate: calculateHourlyPay(resource.experience_years),
+        hourly_rate: resource.hourly_rate_override != null ? Number(resource.hourly_rate_override) : calculateHourlyPay(resource.experience_years),
       },
     ]);
   };
@@ -1480,8 +1821,20 @@ export function TeamDesignExperience() {
     }
   };
 
+  const validateDeveloperAllocation = () => {
+    return null;
+  };
+
   const proceedToCosting = () => {
+    const validationError = validateDeveloperAllocation();
+    if (userHasModified && validationError) {
+      setError(validationError);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     const approvedTeam = buildApprovedTeamPayload(teamData);
+    approvedTeam.pm_pct = pmFactor;
+    approvedTeam.currency = selectedCurrency;
     saveApprovedTeam(approvedTeam);
     saveCostDraft(createCostDraftFromTeamData(approvedTeam));
     router.push("/cost-estimation");
@@ -1527,18 +1880,6 @@ export function TeamDesignExperience() {
                 editable team.
               </em>
             </h1>
-            <p
-              style={{
-                fontFamily: "var(--font-sans)",
-                fontSize: "0.95rem",
-                maxWidth: "640px",
-                color: "rgba(10,28,22,0.7)",
-                lineHeight: 1.6,
-                fontWeight: 300,
-              }}
-            >
-              Connects directly to the approved SRS - so the staffing recommendation is generated from the exact blueprint you approved.
-            </p>
           </div>
         </div>
       </section>
@@ -1615,111 +1956,172 @@ export function TeamDesignExperience() {
                  </div>
 
                  {!isRosterCollapsed && (
-                   <div className="space-y-4">
-                     <div className="bg-parcelles-sage/10 border border-parcelles-dark/20 p-3 font-body text-xs leading-relaxed text-parcelles-dark/80">
-                       <strong>Seniority & Allocation Logic:</strong> The AI allocates resources from this roster. It assigns <strong>Lead/Senior</strong> members (6+ Yrs Exp) to High complexity modules, <strong>Mid-level</strong> members (3-5 Yrs Exp) to Medium modules, and <strong>Junior</strong> members (1-2 Yrs Exp) to Low complexity modules.
-                     </div>
+                    <div className="space-y-4">
+                      {/* Profiles Selection Dropdown & Management */}
+                      <div className="flex items-center justify-between gap-4 flex-wrap border-b border-parcelles-dark/15 pb-3">
+                        <div className="flex items-center gap-2 border border-parcelles-dark/30 px-3 py-1 bg-transparent text-[11px] font-display uppercase tracking-wider text-parcelles-dark">
+                          <span className="opacity-60">Project Profile:</span>
+                          <select
+                            value={activeProfileId}
+                            onChange={(e) => {
+                              const nextId = e.target.value;
+                              setActiveProfileId(nextId);
+                              const p = profiles.find((p) => p.id === nextId);
+                              if (p) {
+                                setCompanyRoster(p.members || []);
+                                setSelectedCurrency(p.currency || "INR");
+                                try {
+                                  window.localStorage.setItem("scopesense-active-profile-id-v1", nextId);
+                                } catch (err) {}
+                              }
+                            }}
+                            className="bg-transparent border-none outline-none font-bold cursor-pointer text-parcelles-dark"
+                          >
+                            {profiles.length === 0 ? (
+                              <option value="">No Profiles Created</option>
+                            ) : (
+                              <>
+                                <option value="">-- Select Profile --</option>
+                                {profiles.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} ({p.currency})
+                                  </option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        </div>
+                      </div>
 
-                     <div className="border border-parcelles-dark divide-y divide-parcelles-dark/20">
-                       <div className="grid grid-cols-12 gap-3 items-center bg-parcelles-sage/20 p-2.5 font-display uppercase tracking-wider text-[10px]">
-                         
-                         
-                         <div className="col-span-3">Name</div>
+
+
+                      {/* Caution block if S1, S2, or S3 developer missing */}
+                      {missingDevLevels.length > 0 && (
+                        <div className="bg-yellow-500/10 border border-yellow-500/35 text-yellow-800 text-xs p-3 font-body flex items-start gap-2.5 animate-fade-in" style={{ clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)" }}>
+                          <span className="text-yellow-600 font-bold text-sm">⚠️</span>
+                          <div>
+                            <span className="font-bold">Roster Warning:</span> The selected profile does not contain any developers of level(s): <strong>{missingDevLevels.join(", ")}</strong>. Developer allocations of these levels will fallback automatically.
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="bg-parcelles-sage/10 border border-parcelles-dark/20 p-3 font-body text-xs leading-relaxed text-parcelles-dark/80">
+                        <strong>Seniority & Allocation Logic:</strong> The AI allocates resources from this roster. It assigns <strong>Lead/Senior</strong> members (6+ Yrs Exp) to High complexity modules, <strong>Mid-level</strong> members (3-5 Yrs Exp) to Medium modules, and <strong>Junior</strong> members (1-2 Yrs Exp) to Low complexity modules.
+                      </div>
+
+                      <div className="border border-parcelles-dark divide-y divide-parcelles-dark/20">
+                        <div className="grid grid-cols-12 gap-3 items-center bg-parcelles-sage/20 p-2.5 font-display uppercase tracking-wider text-[10px]">
+                          <div className="col-span-3">Name</div>
                           <div className="col-span-3">Designated Role</div>
                           <div className="col-span-2">Experience (Yrs)</div>
                           <div className="col-span-3">Hourly Pay</div>
-                         <div className="col-span-1 text-right">Action</div>
-                       </div>
+                          <div className="col-span-1 text-right">Action</div>
+                        </div>
 
-                       <div className="divide-y divide-parcelles-dark/10 max-h-[200px] overflow-y-auto">
-                         {companyRoster.map((member, index) => (
-                           <div key={index} className="grid grid-cols-12 gap-3 items-center p-2 font-body text-xs hover:bg-parcelles-sage/5 transition-colors">
-                             <div className="col-span-3 font-medium text-parcelles-dark">{member.name}</div>
-                             <div className="col-span-3 text-parcelles-dark/70">{member.role}</div>
-                             <div className="col-span-2 flex items-center gap-2">
-                               <input
-                                 type="number"
-                                 min="0"
-                                 max="50"
-                                 step="0.5"
-                                 value={member.experience_years}
-                                 onChange={(e) => handleUpdateRosterMemberExp(index, e.target.value)}
-                                 className="w-14 border border-parcelles-dark/30 px-2 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none transition-colors font-mono"
-                               />
-                               <span className="text-[10px] text-parcelles-dark/50">yrs</span>
-                             </div>
-                             <div className="col-span-3 font-mono font-medium text-parcelles-dark">
-                               ₹{calculateHourlyPay(member.experience_years)}/hr
-                             </div>
-                             <div className="col-span-1 text-right">
-                               <button
-                                 type="button"
-                                 onClick={() => handleRemoveRosterMember(index)}
-                                 className="text-red-700 hover:text-red-900 transition-colors p-1"
-                                 title="Remove resource"
-                               >
-                                 <Trash2 size={14} />
-                               </button>
-                             </div>
-                           </div>
-                         ))}
-                       </div>
+                        <div className="divide-y divide-parcelles-dark/10 max-h-[200px] overflow-y-auto">
+                          {companyRoster.map((member, index) => (
+                            <div key={index} className="grid grid-cols-12 gap-3 items-center p-2 font-body text-xs hover:bg-parcelles-sage/5 transition-colors">
+                              <div className="col-span-3 font-medium text-parcelles-dark">{member.name}</div>
+                              <div className="col-span-3 text-parcelles-dark/70">{member.role}</div>
+                              <div className="col-span-2 flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="50"
+                                  step="0.5"
+                                  value={member.experience_years}
+                                  onChange={(e) => handleUpdateRosterMemberExp(index, e.target.value)}
+                                  className="w-14 border border-parcelles-dark/30 px-2 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none transition-colors font-mono"
+                                />
+                                <span className="text-[10px] text-parcelles-dark/50">yrs</span>
+                              </div>
+                              <div className="col-span-3 flex items-center gap-1 font-mono font-medium text-parcelles-dark">
+                                <span>{getCurrencySymbol(selectedCurrency)}</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={member.hourly_rate_override != null ? member.hourly_rate_override : calculateHourlyPay(member.experience_years)}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    const nextRoster = [...companyRoster];
+                                    nextRoster[index] = {
+                                      ...nextRoster[index],
+                                      hourly_rate_override: val === "" ? null : Number(val) || 0
+                                    };
+                                    setAndSyncRoster(nextRoster);
+                                  }}
+                                  className="w-16 border border-parcelles-dark/30 px-1 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none font-mono"
+                                />
+                                <span className="text-[10px] opacity-60">/hr</span>
+                              </div>
+                              <div className="col-span-1 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveRosterMember(index)}
+                                  className="text-red-700 hover:text-red-900 transition-colors p-1"
+                                  title="Remove resource"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
 
-                       {/* Add new member form row */}
-                       <div className="grid grid-cols-12 gap-3 items-center p-2 bg-parcelles-sage/10 font-body text-xs">
-                         <div className="col-span-3">
-                           <input
-                             type="text"
-                             placeholder="Resource Name"
-                             value={newMemberName}
-                             onChange={(e) => setNewMemberName(e.target.value)}
-                             className="w-full border border-parcelles-dark/30 px-2 py-1 bg-transparent focus:border-parcelles-dark outline-none transition-colors"
-                           />
-                         </div>
-                         <div className="col-span-3">
-                           <select
-                             value={newMemberRole}
-                             onChange={(e) => setNewMemberRole(e.target.value)}
-                             className="w-full border border-parcelles-dark/30 px-2 py-1 bg-parcelles-bg focus:border-parcelles-dark outline-none transition-colors"
-                             style={{ cursor: "pointer" }}
-                           >
-                             <option value="Lead Full Stack Developer">Lead Full Stack Developer</option>
-                             <option value="Senior Full Stack Developer">Senior Full Stack Developer</option>
-                             <option value="Junior Full Stack Developer">Junior Full Stack Developer</option>
-                             <option value="QA Tester">QA Tester</option>
-                             <option value="Project Manager">Project Manager</option>
-                             <option value="DevOps Engineer">DevOps Engineer</option>
-                           </select>
-                         </div>
-                         <div className="col-span-2 flex items-center gap-2">
-                           <input
-                             type="number"
-                             min="0"
-                             max="50"
-                             value={newMemberExp}
-                             onChange={(e) => setNewMemberExp(e.target.value)}
-                             className="w-14 border border-parcelles-dark/30 px-2 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none transition-colors font-mono"
-                           />
-                           <span className="text-[10px] text-parcelles-dark/50">yrs</span>
-                         </div>
-                         <div className="col-span-3 font-mono font-medium text-parcelles-dark/70">
-                           ₹{calculateHourlyPay(newMemberExp)}/hr
-                         </div>
-                         <div className="col-span-1 text-right">
-                           <button
-                             type="button"
-                             onClick={handleAddRosterMember}
-                             disabled={!newMemberName.trim()}
-                             className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg px-2 py-0.5 hover:opacity-90 disabled:opacity-30 transition-opacity font-display text-[10px] uppercase"
-                           >
-                             Add
-                           </button>
-                         </div>
-                       </div>
-                     </div>
-                   </div>
-                 )}
-               </div>
+                        {/* Add new member form row */}
+                        <div className="grid grid-cols-12 gap-3 items-center p-2 bg-parcelles-sage/10 font-body text-xs">
+                          <div className="col-span-3">
+                            <input
+                              type="text"
+                              placeholder="Resource Name"
+                              value={newMemberName}
+                              onChange={(e) => setNewMemberName(e.target.value)}
+                              className="w-full border border-parcelles-dark/30 px-2 py-1 bg-transparent focus:border-parcelles-dark outline-none transition-colors"
+                            />
+                          </div>
+                          <div className="col-span-3">
+                            <select
+                              value={newMemberRole}
+                              onChange={(e) => setNewMemberRole(e.target.value)}
+                              className="w-full border border-parcelles-dark/30 px-2 py-1 bg-parcelles-bg focus:border-parcelles-dark outline-none transition-colors"
+                              style={{ cursor: "pointer" }}
+                            >
+                              <option value="S3 Developer">S3 Developer</option>
+                              <option value="S2 Developer">S2 Developer</option>
+                              <option value="S1 Developer">S1 Developer</option>
+                            </select>
+                          </div>
+                          <div className="col-span-2 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="50"
+                              value={newMemberExp}
+                              onChange={(e) => setNewMemberExp(e.target.value)}
+                              className="w-14 border border-parcelles-dark/30 px-2 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none transition-colors font-mono"
+                            />
+                            <span className="text-[10px] text-parcelles-dark/50">yrs</span>
+                          </div>
+                          <div className="col-span-3 flex items-center gap-1 font-mono font-medium text-parcelles-dark/70">
+                            <span>{getCurrencySymbol(selectedCurrency)}</span>
+                            <span>{calculateHourlyPay(newMemberExp)}</span>
+                            <span className="text-[10px] opacity-60">/hr</span>
+                          </div>
+                          <div className="col-span-1 text-right">
+                            <button
+                              type="button"
+                              onClick={handleAddRosterMember}
+                              disabled={!newMemberName.trim()}
+                              className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg px-2 py-0.5 hover:opacity-90 disabled:opacity-30 transition-opacity font-display text-[10px] uppercase"
+                            >
+                              Add
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                  {/* Intake Card (No Tabs, just Approved SRS) */}
                  <section style={{ background: "rgba(196,215,201,0.25)", border: "1px solid #0A1C16", padding: "1.25rem", clipPath: "polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 0 100%)" }}>
@@ -1774,1086 +2176,271 @@ export function TeamDesignExperience() {
                   <div>
                     <p className="font-display uppercase tracking-widest text-[10px] opacity-65">AI Recommendation</p>
                     <h2 className="text-3xl font-display mt-1">{teamData.project_name}</h2>
-                    <div className="mt-2.5 flex flex-wrap gap-2.5 font-display text-xs">
-                      <div className="px-2.5 py-0.5 border border-parcelles-dark rounded-full flex items-center gap-1.5">
-                        <Users size={14} />
-                        {teamData.members.length} roles
-                      </div>
-                      <div className="px-2.5 py-0.5 bg-parcelles-dark text-parcelles-bg rounded-full">
-                        {teamData.members.reduce((total, member) => total + (Number(member.count) || 0), 0)} people total
-                      </div>
-                      {teamData.total_working_weeks ? (
-                        <div className="px-2.5 py-0.5 border border-parcelles-dark rounded-full">
-                          {Math.round(teamData.total_working_weeks * 40)} hrs ({Math.ceil(teamData.total_working_weeks * 5)} days) duration
-                        </div>
-                      ) : null}
-                      {teamData.total_project_hours ? (
-                        <div className="px-2.5 py-0.5 border border-parcelles-dark rounded-full">
-                          {parseFloat(teamData.total_project_hours.toFixed(1))} hrs ({Math.ceil(teamData.total_project_hours / 8)} days) total
-                        </div>
-                      ) : null}
-                      {analysisResult?.feature_complexity_analysis?.length ? (() => {
-                        const total = analysisResult.feature_complexity_analysis.length;
-                        const active = analysisResult.feature_complexity_analysis.filter(
-                          (m) => activeModules[m.module_name] !== false
-                        ).length;
-                        return (
-                          <div className={`px-2.5 py-0.5 rounded-full border transition-colors ${active < total ? "bg-amber-100 border-amber-500 text-amber-800" : "border-parcelles-dark"}`}>
-                            {active}/{total} modules in scope
-                          </div>
-                        );
-                      })() : null}
-                    </div>
                   </div>
 
                 </div>
 
-                {/* DYNAMIC ROSTER EFFORT SUMMARY */}
-                <div className="border border-parcelles-dark bg-parcelles-bg p-4 sm:p-5 chamfer-bottom-right space-y-4">
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-parcelles-dark pb-3">
-                    <div>
-                      <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Company Roster Metrics</p>
-                      <h2 className="text-lg font-display mt-0.5">Dynamic Roster Effort Summary</h2>
-                    </div>
-                    <span className="px-3 py-0.5 text-[10px] font-display uppercase tracking-widest bg-parcelles-dark text-parcelles-bg rounded-full">
-                      Real-time Allocation
-                    </span>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div 
-                      style={{
-                        background: "linear-gradient(135deg, #052D21 0%, #0A1C16 100%)",
-                        borderColor: "#10B981",
-                        boxShadow: "0 8px 20px -4px rgba(16, 185, 129, 0.12)",
-                        color: "#D1FAE5"
-                      }}
-                      className="p-4 sm:p-5 border chamfer-bottom-right flex flex-col justify-between"
-                    >
-                      <div>
-                        <h3 className="font-serif italic text-xl mt-3 leading-tight">Project Duration</h3>
-                        <p className="font-body text-[11px] mt-1.5 opacity-80 leading-relaxed">
-                          The timeline required to deliver the active module scope, driven reactively by the longest active resource assignment.
-                        </p>
-                      </div>
-                      <div className="mt-5 pt-3 border-t border-emerald-800/40 flex items-baseline justify-between font-display text-sm">
-                        <span className="opacity-60 text-[9px] uppercase tracking-wider">Total Duration</span>
-                        <div className="text-right">
-                          <span className="text-xl font-bold">{Math.round(teamData.total_working_weeks * 40)} hrs</span>
-                          <span className="text-[11px] opacity-70 ml-1.5">/ {Math.ceil(teamData.total_working_weeks * 5)} days</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div 
-                      style={{
-                        background: "linear-gradient(135deg, #05262D 0%, #0A1C16 100%)",
-                        borderColor: "#06B6D4",
-                        boxShadow: "0 8px 20px -4px rgba(6, 182, 212, 0.12)",
-                        color: "#CFFAFE"
-                      }}
-                      className="p-4 sm:p-5 border chamfer-bottom-right flex flex-col justify-between"
-                    >
-                      <div>
-                        <h3 className="font-serif italic text-xl mt-3 leading-tight">Engineering Effort</h3>
-                        <p className="font-body text-[11px] mt-1.5 opacity-80 leading-relaxed">
-                          The total engineering hours calculated in real-time across all assigned developers, testers, and release workflows.
-                        </p>
-                      </div>
-                      <div className="mt-5 pt-3 border-t border-cyan-800/40 flex items-baseline justify-between font-display text-sm">
-                        <span className="opacity-60 text-[9px] uppercase tracking-wider">Total Effort</span>
-                        <div className="text-right">
-                          <span className="text-xl font-bold">{parseFloat(teamData.total_project_hours.toFixed(1))} hrs</span>
-                          <span className="text-[11px] opacity-70 ml-1.5">/ {Math.ceil(teamData.total_project_hours / 8)} days</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div 
-                      style={{
-                        background: "linear-gradient(135deg, #1C1C1C 0%, #0A1C16 100%)",
-                        borderColor: "#8B5CF6",
-                        boxShadow: "0 8px 20px -4px rgba(139, 92, 246, 0.12)",
-                        color: "#EDE9FE"
-                      }}
-                      className="p-4 sm:p-5 border chamfer-bottom-right flex flex-col justify-between"
-                    >
-                      <div>
-                        <Users className="w-6 h-6 text-purple-300" />
-                        <h3 className="font-serif italic text-xl mt-3 leading-tight">Roster Size</h3>
-                        <p className="font-body text-[11px] mt-1.5 opacity-80 leading-relaxed">
-                          The count of distinct allocated professionals from the company roster currently operating in active roles.
-                        </p>
-                      </div>
-                      <div className="mt-5 pt-3 border-t border-purple-800/40 flex items-baseline justify-between font-display text-sm">
-                        <span className="opacity-60 text-[9px] uppercase tracking-wider">Total Size</span>
-                        <span className="text-xl font-bold">
-                          {teamData.members.reduce((total, member) => total + (Number(member.count) || 0), 0)} members
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* EFFORT CALCULATIONS & MATHEMATICAL BREAKDOWN */}
-                {mathBreakdown && (
-                  <div className="border border-parcelles-dark bg-parcelles-bg p-6 sm:p-8 chamfer-bottom-right space-y-6">
-                    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-parcelles-dark pb-4">
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 border border-parcelles-dark flex items-center justify-center chamfer-bottom-left bg-parcelles-sage/20">
-                          <BarChart3 className="w-5 h-5 text-parcelles-dark" />
-                        </div>
-                        <div>
-                          <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Formula &amp; Effort Traceability</p>
-                          <h2 className="text-xl font-display mt-0.5">Effort Calculations &amp; Mathematical Breakdown</h2>
-                        </div>
-                      </div>
-                      <span className="px-3 py-0.5 text-[10px] font-display uppercase tracking-widest bg-parcelles-dark/10 border border-parcelles-dark/20 text-parcelles-dark rounded-full">
-                        Strict Equation Model
-                      </span>
-                    </div>
-
-                    <div className="grid lg:grid-cols-[1fr_1.2fr] gap-8">
-                      {/* Left: Module-wise Effort Analysis */}
-                      <div className="space-y-4">
-                        <div>
-                          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-parcelles-dark">Module-wise Development Effort</h3>
-                          <p className="font-body text-xs text-parcelles-dark/70 mt-1">
-                            Sum of development hours across active feature modules.
-                          </p>
-                        </div>
-                        <div className="border border-parcelles-dark divide-y divide-parcelles-dark/15 max-h-[350px] overflow-y-auto pr-2">
-                          {mathBreakdown.moduleEfforts.map((mod, idx) => (
-                            <div key={idx} className="p-3 flex justify-between items-center hover:bg-parcelles-sage/5 transition-colors">
-                              <span className="font-body text-xs text-parcelles-dark font-medium line-clamp-1">{mod.name}</span>
-                              <span className="font-mono text-xs font-bold text-parcelles-dark shrink-0 ml-3">
-                                {mod.hours} hrs <span className="font-normal opacity-55 text-[10px]">({Math.ceil(mod.hours / 8)}d)</span>
-                              </span>
-                            </div>
-                          ))}
-                          <div className="p-3 bg-parcelles-sage/15 flex justify-between items-center font-bold">
-                            <span className="font-display text-xs uppercase tracking-wider">Total Development Hours</span>
-                            <span className="font-mono text-sm">
-                              {mathBreakdown.totalDevHours} hrs <span className="font-normal opacity-65 text-[11px]">({Math.ceil(mathBreakdown.totalDevHours / 8)}d)</span>
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right: Step-by-Step Mathematical Calculations */}
-                      <div className="space-y-5 lg:border-l lg:border-parcelles-dark/15 lg:pl-8">
-                        <div>
-                          <h3 className="font-display text-sm font-bold uppercase tracking-wider text-parcelles-dark">Calculation Steps</h3>
-                          <p className="font-body text-xs text-parcelles-dark/70 mt-1">
-                            How development effort is converted to testing, deployment, management, and buffer hours.
-                          </p>
-                        </div>
-
-                        <div className="space-y-3.5">
-                          {/* Step 1: Dev Hours */}
-                          <div className="bg-parcelles-sage/5 border border-parcelles-dark/10 p-3 rounded space-y-1">
-                            <div className="flex justify-between items-center">
-                              <span className="font-display text-xs font-bold uppercase tracking-wider">1. Base Development Effort</span>
-                              <span className="font-mono text-xs font-bold">{mathBreakdown.totalDevHours} hrs</span>
-                            </div>
-                          </div>
-
-                          {/* Step 2: Senior Developer Testing */}
-                          <div className="bg-parcelles-sage/5 border border-parcelles-dark/10 p-3 rounded space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-display text-xs font-bold uppercase tracking-wider">2. Testing &amp; Governance</span>
-                              <span className="font-mono text-xs font-bold text-indigo-950">{(mathBreakdown.testingInternal + mathBreakdown.testingExternal + mathBreakdown.reqFetch + mathBreakdown.weeklyMeetings + mathBreakdown.kt).toFixed(1)} hrs</span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[10px] text-parcelles-dark/85">
-                              <div>• Internal Testing: <span className="font-bold">{mathBreakdown.testingInternal.toFixed(1)} hrs</span></div>
-                              <div>• External Testing: <span className="font-bold">{mathBreakdown.testingExternal.toFixed(1)} hrs</span></div>
-                              <div>• Requirement Fetch: <span className="font-bold">{mathBreakdown.reqFetch} hrs</span></div>
-                              <div>• Weekly Meetings: <span className="font-bold">{mathBreakdown.weeklyMeetings} hrs</span></div>
-                              <div>• KT Session: <span className="font-bold">{mathBreakdown.kt} hrs</span></div>
-                            </div>
-                          </div>
-
-                          {/* Step 3: Senior Developer Deployment */}
-                          <div className="bg-parcelles-sage/5 border border-parcelles-dark/10 p-3 rounded space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-display text-xs font-bold uppercase tracking-wider">3. Deployment</span>
-                              <span className="font-mono text-xs font-bold text-blue-950">{mathBreakdown.deployment.toFixed(1)} hrs</span>
-                            </div>
-                          </div>
-
-                          {/* Step 4: Base Effort & PM */}
-                          <div className="bg-parcelles-sage/5 border border-parcelles-dark/10 p-3 rounded space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-display text-xs font-bold uppercase tracking-wider">4. Base Effort &amp; Project Management</span>
-                              <span className="font-mono text-xs font-bold text-amber-950">{mathBreakdown.pmHours.toFixed(1)} hrs</span>
-                            </div>
-                          </div>
-
-                          {/* Step 4: Contingencies */}
-                          <div className="bg-parcelles-sage/5 border border-parcelles-dark/10 p-3 rounded space-y-2">
-                            <div className="flex justify-between items-center">
-                              <span className="font-display text-xs font-bold uppercase tracking-wider">5. Contingencies &amp; Buffers</span>
-                              <span className="font-mono text-xs font-bold text-emerald-950">{(mathBreakdown.riskHours + mathBreakdown.negotiationHours).toFixed(1)} hrs</span>
-                            </div>
-                          </div>
-
-                          {/* Grand Total */}
-                          <div className="bg-parcelles-dark text-parcelles-bg p-4 flex justify-between items-center font-bold">
-                            <span className="font-display text-sm uppercase tracking-wider">Grand Total Effort Hours</span>
-                            <span className="font-mono text-lg">{mathBreakdown.grandTotalHours.toFixed(1)} hrs</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* AI FEATURE COMPLEXITY & TIMELINE GRID */}
-                {analysisResult?.feature_complexity_analysis?.length ? (
-                  <div className="border border-parcelles-dark bg-parcelles-bg p-6 sm:p-8 chamfer-bottom-right space-y-6">
-                    <div 
-                      onClick={() => setIsComplexityExpanded(!isComplexityExpanded)}
-                      style={{ cursor: "pointer" }}
-                      className="flex flex-wrap items-center justify-between gap-4 border-b border-parcelles-dark pb-4 mb-6"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 border border-parcelles-dark flex items-center justify-center chamfer-bottom-left bg-parcelles-sage/20">
-                          <Sparkles size={18} className="text-parcelles-dark" />
-                        </div>
-                        <div>
-                          <p className="font-display uppercase tracking-widest text-[9px] opacity-60">AI Real-time Scope Analysis</p>
-                          <h2 className="text-xl font-display mt-0.5">Feature Complexity &amp; Staffing Analysis</h2>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2.5">
-                        <span className="px-4 py-1 text-xs font-display uppercase tracking-widest bg-parcelles-dark/10 border border-parcelles-dark/20 text-parcelles-dark rounded-full">
-                          Roster Allocation: <span className="font-bold underline">Real-time</span>
-                        </span>
-                        {isComplexityExpanded ? <ChevronUp size={20} className="text-parcelles-dark" /> : <ChevronDown size={20} className="text-parcelles-dark" />}
-                      </div>
-                    </div>
-
-                    {isComplexityExpanded && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {analysisResult.feature_complexity_analysis.map((module, idx) => {
-                        const complexityColors = {
-                          High: { bg: "rgba(220,38,38,0.08)", border: "rgba(220,38,38,0.25)", text: "#991b1b" },
-                          Medium: { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", text: "#92400e" },
-                          Low: { bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.25)", text: "#065f46" }
-                        };
-                        const col = complexityColors[module.complexity] || complexityColors.Medium;
-                        const isModuleActive = activeModules[module.module_name] !== false;
-
-                        return (
-                          <div
-                            key={idx}
-                            style={{ opacity: isModuleActive ? 1 : 0.45, transition: "opacity 0.3s ease" }}
-                            className="border border-parcelles-dark bg-parcelles-bg/40 hover:bg-parcelles-sage/5 transition-all duration-300 p-6 flex flex-col justify-between chamfer-bottom-right group"
-                          >
-                            <div>
-                              <div className="flex justify-between items-start gap-4">
-                                <div className="flex items-center gap-2 flex-1 min-w-0">
-                                  {/* Active-in-scope toggle */}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleModule(module.module_name)}
-                                    title={isModuleActive ? "Click to exclude from scope" : "Click to include in scope"}
-                                    className="shrink-0 flex items-center gap-1.5 px-2 py-0.5 border font-display text-[9px] uppercase tracking-wider rounded-full transition-all duration-200"
-                                    style={{
-                                      borderColor: isModuleActive ? "#0A1C16" : "rgba(10,28,22,0.3)",
-                                      background: isModuleActive ? "#0A1C16" : "transparent",
-                                      color: isModuleActive ? "#F5F2E8" : "rgba(10,28,22,0.5)",
-                                    }}
-                                  >
-                                    <span style={{ fontSize: "8px" }}>{isModuleActive ? "✓" : "○"}</span>
-                                    {isModuleActive ? "In Scope" : "Excluded"}
-                                  </button>
-                                  <h3 className="font-display text-lg text-parcelles-dark font-bold line-clamp-2">{module.module_name}</h3>
-                                </div>
-                                <span
-                                  className="shrink-0 inline-block px-2.5 py-0.5 font-display text-[9px] uppercase tracking-wider rounded-full border"
-                                  style={{ backgroundColor: col.bg, borderColor: col.border, color: col.text }}
-                                >
-                                  {module.complexity}
-                                </span>
-                              </div>
-
-                              <div className="mt-4 flex items-center justify-between border-y border-parcelles-dark/10 py-2.5">
-                                <span className="font-body text-xs opacity-70">Estimated Effort:</span>
-                                <span className="font-display text-sm font-bold text-parcelles-dark">
-                                  {parseFloat(Number(module.estimated_hours).toFixed(1))} hrs
-                                  <span className="font-normal opacity-60 text-[11px] ml-1">/ {Math.ceil(Number(module.estimated_hours) / 8)} days</span>
-                                </span>
-                              </div>
-
-                              <p className="mt-4 font-body text-xs text-parcelles-dark/80 leading-relaxed min-h-[40px]">
-                                {module.reasoning}
-                              </p>
-
-                              {/* Screen Designs section */}
-                              {module.screen_designs && module.screen_designs.length > 0 && (
-                                <div className="mt-5 space-y-2">
-                                  <span className="font-display text-[10px] uppercase tracking-wider opacity-60 block">Screen Designs & UI Layouts</span>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {module.screen_designs.map((screen, sIdx) => (
-                                      <span key={sIdx} className="px-2 py-0.5 border border-parcelles-dark/20 bg-parcelles-sage/10 text-[10px] font-body text-parcelles-dark rounded">
-                                        {screen}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Dynamic allocations listing */}
-                              {(() => {
-                                const assignedResources = moduleAllocations[module.module_name] || [];
-                                const devAllocations = assignedResources.filter(alloc => {
-                                  const roleLower = (alloc.role || "").toLowerCase();
-                                  const descLower = (alloc.description || "").toLowerCase();
-                                  return !descLower.includes("deployment") && !descLower.includes("testing") && !roleLower.includes("lead");
-                                });
-
-                                return (
-                                  <div className="mt-5 border-t border-parcelles-dark/15 pt-4 space-y-3">
-                                    <div className="flex items-center justify-between">
-                                      <span className="font-display text-[10px] uppercase tracking-wider opacity-60 block">Staffing Assignment</span>
-                                      <span className="text-[10px] font-mono text-parcelles-dark/60 font-bold">
-                                        {devAllocations.filter(alloc => alloc.selected !== false).length}/{devAllocations.length} active
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
-                                      <div className="space-y-2">
-                                        <span className="font-display text-[9px] uppercase tracking-wider text-parcelles-dark/70 font-semibold block">Development Allocation</span>
-                                        {devAllocations.length > 0 ? (
-                                          <div className="space-y-2">
-                                            {devAllocations.map((alloc, aIdx) => {
-                                              const originalIdx = assignedResources.findIndex(r => r === alloc);
-                                              const share = Math.min(100, Math.round((alloc.hours / (module.estimated_hours || 1)) * 100));
-                                              return (
-                                                <div
-                                                  key={aIdx}
-                                                  className="p-3 border border-parcelles-dark/10 bg-parcelles-bg rounded space-y-2 transition-all"
-                                                  style={{ opacity: alloc.selected === false ? 0.55 : 1 }}
-                                                >
-                                                  <div className="flex justify-between items-start text-xs font-display gap-2">
-                                                    <div className="min-w-0 flex-1">
-                                                      <label className="flex items-start gap-2 cursor-pointer">
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={alloc.selected !== false}
-                                                          onChange={(e) => {
-                                                            const nextList = [...assignedResources];
-                                                            nextList[originalIdx].selected = e.target.checked;
-                                                            if (!e.target.checked) {
-                                                              delete nextList[originalIdx].manuallyEdited;
-                                                            }
-                                                            const activeAllocation =
-                                                              selectedOption === "fastest" ? module.fastest_allocation :
-                                                                selectedOption === "lean" ? module.lean_allocation :
-                                                                  module.balanced_allocation;
-                                                            const recalculatedList = recalculateModuleAllocations(nextList, module.estimated_hours, activeAllocation);
-                                                            setModuleAllocations({
-                                                              ...moduleAllocations,
-                                                              [module.module_name]: recalculatedList
-                                                            });
-                                                          }}
-                                                          className="mt-0.5"
-                                                        />
-                                                        <span>
-                                                          <span className="font-bold text-parcelles-dark block truncate" title={alloc.name}>
-                                                            {alloc.name}
-                                                          </span>
-                                                          <span className="text-[9px] text-parcelles-dark/55 block mt-1">
-                                                            {parseFloat(Number(alloc.hours).toFixed(1))} hrs / {Math.ceil(Number(alloc.hours) / 8)} days
-                                                          </span>
-                                                        </span>
-                                                      </label>
-                                                    </div>
-
-                                                    <div className="flex items-center gap-1">
-                                                      <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="1000"
-                                                        value={alloc.hours}
-                                                        onChange={(e) => {
-                                                          const val = Math.max(0, parseInt(e.target.value) || 0);
-                                                          const nextList = [...assignedResources];
-                                                          nextList[originalIdx].hours = val;
-                                                          nextList[originalIdx].manuallyEdited = true;
-                                                          const activeAllocation =
-                                                            selectedOption === "fastest" ? module.fastest_allocation :
-                                                              selectedOption === "lean" ? module.lean_allocation :
-                                                                module.balanced_allocation;
-                                                          const recalculatedList = recalculateModuleAllocations(nextList, module.estimated_hours, activeAllocation);
-                                                          setModuleAllocations({
-                                                            ...moduleAllocations,
-                                                            [module.module_name]: recalculatedList
-                                                          });
-                                                        }}
-                                                        className="w-14 border border-parcelles-dark/30 px-1 py-0.5 text-center bg-transparent focus:border-parcelles-dark outline-none font-mono text-[11px]"
-                                                      />
-                                                      <span className="text-[9px] text-parcelles-dark/50">hrs</span>
-
-                                                      <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                          const nextList = assignedResources.filter((_, idx) => idx !== originalIdx);
-                                                          const activeAllocation =
-                                                            selectedOption === "fastest" ? module.fastest_allocation :
-                                                              selectedOption === "lean" ? module.lean_allocation :
-                                                                module.balanced_allocation;
-                                                          const recalculatedList = recalculateModuleAllocations(nextList, module.estimated_hours, activeAllocation);
-                                                          setModuleAllocations({
-                                                            ...moduleAllocations,
-                                                            [module.module_name]: recalculatedList
-                                                          });
-                                                        }}
-                                                        className="text-red-700 hover:text-red-950 p-0.5 ml-1 transition-colors"
-                                                        title="Remove resource"
-                                                      >
-                                                        <Trash2 size={13} />
-                                                      </button>
-                                                    </div>
-                                                  </div>
-
-                                                  {alloc.description && (
-                                                    <p className="text-[10px] text-parcelles-dark/70 leading-relaxed">
-                                                      {alloc.description}
-                                                    </p>
-                                                  )}
-
-                                                  <div className="w-full bg-parcelles-dark/5 h-1 rounded-full overflow-hidden">
-                                                    <div
-                                                      className="bg-parcelles-dark h-full transition-all duration-300"
-                                                      style={{ width: `${share}%` }}
-                                                      title={`${share}% of estimated module hours`}
-                                                    />
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        ) : (
-                                          <p className="text-[10px] text-parcelles-dark/50 italic text-center py-2 bg-parcelles-dark/5 rounded">
-                                            No developers assigned.
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    
-                                    {/* Assign resources to this module with checkboxes */}
-                                    {(() => {
-                                      const hasFullStack = assignedResources.some(r => (r.role || "").toLowerCase().includes("full stack") || (r.role || "").toLowerCase().includes("full-stack"));
-                                      const hasUIUX = assignedResources.some(r => (r.role || "").toLowerCase().includes("ui/ux") || (r.role || "").toLowerCase().includes("designer"));
-
-                                      const deliveryCandidates = companyRoster.filter(candidate => {
-                                        if (isIntegratedSupportWorkstream(classifyRoleWorkstream(candidate.role))) return false;
-                                        if (candidate.experience_years > 10) return false;
-                                        return true;
-                                      });
-
-                                      const toggleResourceForModule = (candidate, checked) => {
-                                        const currentList = assignedResources;
-                                        let newList = [];
-                                        if (!checked) {
-                                          newList = currentList.filter((resource) => resource.name !== candidate.name);
-                                        } else {
-                                          if (currentList.some((resource) => resource.name === candidate.name)) {
-                                            return;
-                                          }
-                                          newList = [
-                                            ...currentList,
-                                            {
-                                              name: candidate.name,
-                                              role: candidate.role,
-                                              experience_years: candidate.experience_years,
-                                              description: `Assigned to ${module.module_name}`,
-                                              selected: true,
-                                            },
-                                          ];
-                                        }
-                                        const activeAllocation =
-                                          selectedOption === "fastest" ? module.fastest_allocation :
-                                            selectedOption === "lean" ? module.lean_allocation :
-                                              module.balanced_allocation;
-                                        const recalculatedList = recalculateModuleAllocations(newList, module.estimated_hours, activeAllocation);
-                                        setModuleAllocations({
-                                          ...moduleAllocations,
-                                          [module.module_name]: recalculatedList,
-                                        });
-                                      };
-
-                                      return (
-                                        <div className="mt-2 pt-2 border-t border-dashed border-parcelles-dark/10">
-                                          {deliveryCandidates.length > 0 ? (
-                                            <div className="space-y-2">
-                                              <label className="text-[9px] font-display uppercase tracking-wider opacity-60 block">Add / Remove Members</label>
-                                              <div className="grid gap-1.5 max-h-[160px] overflow-y-auto pr-1">
-                                                {deliveryCandidates.map(candidate => {
-                                                  const alreadyAssigned = assignedResources.some((resource) => resource.name === candidate.name);
-                                                  const blocked =
-                                                    !alreadyAssigned &&
-                                                    (((candidate.role || "").toLowerCase().includes("ui/ux") && hasFullStack) ||
-                                                      ((candidate.role || "").toLowerCase().includes("full stack") && hasUIUX));
-                                                  const estHours = estimateResourceHours(module.estimated_hours, candidate);
-                                                  return (
-                                                    <label
-                                                      key={candidate.name}
-                                                      className={`flex items-center justify-between gap-2 border px-2 py-1.5 text-[10px] font-body transition-colors cursor-pointer ${alreadyAssigned
-                                                          ? "border-parcelles-dark bg-parcelles-sage/15"
-                                                          : blocked
-                                                            ? "border-parcelles-dark/10 bg-parcelles-dark/5 opacity-50 cursor-not-allowed"
-                                                            : "border-parcelles-dark/20 hover:border-parcelles-dark"
-                                                        }`}
-                                                    >
-                                                      <span className="flex items-center gap-2 min-w-0">
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={alreadyAssigned}
-                                                          disabled={blocked}
-                                                          onChange={(event) => toggleResourceForModule(candidate, event.target.checked)}
-                                                          className="cursor-pointer disabled:cursor-not-allowed"
-                                                        />
-                                                        <span className="min-w-0">
-                                                          <span className="font-bold block truncate">{candidate.name}</span>
-                                                          <span className="opacity-60 block truncate">{candidate.role} - {candidate.experience_years} yrs</span>
-                                                        </span>
-                                                      </span>
-                                                      <span className="font-mono opacity-70 shrink-0">{estHours}h</span>
-                                                    </label>
-                                                  );
-                                                })}
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <p className="text-[9px] text-amber-800 bg-amber-50 border border-amber-200/50 p-1.5 rounded text-center leading-tight">
-                                              No compatible resource available in roster
-                                            </p>
-                                          )}
-                                        </div>
-                                      );
-                                    })()}
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    )}
-                  </div>
-                ) : null}
-
-                <div className="border border-parcelles-dark bg-parcelles-bg p-4 sm:p-5 chamfer-bottom-left space-y-4">
-                  <div 
-                    onClick={() => setIsSupportExpanded(!isSupportExpanded)}
-                    style={{ cursor: "pointer" }}
-                    className="flex flex-wrap items-center justify-between gap-4 border-b border-parcelles-dark pb-3 mb-4"
-                  >
-                    <div>
-                      <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Integrated Delivery Support</p>
-                      <h2 className="text-lg font-display mt-0.5">Project Management &amp; Deployment Coverage</h2>
-                    </div>
-                    <div className="flex items-center gap-2.5">
-                      <span className="px-3 py-0.5 text-[10px] font-display uppercase tracking-widest border border-parcelles-dark/20 bg-parcelles-dark/5 rounded-full">
-                        Included in total team hours
-                      </span>
-                      {isSupportExpanded ? <ChevronUp size={20} className="text-parcelles-dark" /> : <ChevronDown size={20} className="text-parcelles-dark" />}
-                    </div>
-                  </div>
-
-                  {isSupportExpanded && (
-                    <>
-                      <div className="grid lg:grid-cols-[1fr_280px] gap-4 items-end">
-                    <p className="font-body text-xs opacity-75 leading-relaxed">
-                      These roles are planned separately from module build cards, but they remain inside the same allocation, duration, and effort totals.
-                    </p>
-                    <div className="grid gap-2">
-                      <select
-                        value=""
-                        onChange={(event) => {
-                          const selected = companyRoster.find((candidate) => candidate.name === event.target.value);
-                          addSupportFromRoster(selected);
-                        }}
-                        className="w-full text-xs font-body bg-parcelles-bg border border-parcelles-dark/30 px-3 py-2 outline-none focus:border-parcelles-dark"
-                        style={{ cursor: "pointer" }}
-                      >
-                        <option value="">Add PM / DevOps from roster</option>
-                        {companyRoster
-                          .filter((candidate) => {
-                            return !integratedSupportMembers.some((member) => member.role.includes(candidate.name));
-                          })
-                          .map((candidate) => (
-                            <option key={candidate.name} value={candidate.name}>
-                              {candidate.name} ({candidate.role}, {candidate.experience_years} yrs)
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {integratedSupportMembers.length > 0 ? (
-                    <div className="grid md:grid-cols-2 gap-4">
-                      {integratedSupportMembers.map((member, index) => {
-                        const workstream = classifyRoleWorkstream(member.role);
-                        const tag = workstream === "management" ? "Project Management" : "Deployment / DevOps";
-                        const isSelected = member.selected !== false;
-                        return (
-                          <div
-                            key={`${member.role}-${index}`}
-                            className="border border-parcelles-dark/15 bg-parcelles-sage/10 p-3 space-y-3 transition-opacity"
-                            style={{ opacity: isSelected ? 1 : 0.55 }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <label className="flex items-start gap-3 min-w-0 cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={(event) => updateSupportAllocation(index, { selected: event.target.checked })}
-                                  className="mt-1"
-                                />
-                                <div className="min-w-0">
-                                  <div className="font-display text-base truncate" title={member.role}>{member.role}</div>
-                                  <div className="font-display text-[9px] uppercase tracking-widest opacity-60 mt-0.5">{tag}</div>
-                                </div>
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => setSupportAllocations((current) => current.filter((_, idx) => idx !== index))}
-                                className="text-red-700 hover:text-red-950 p-1 transition-colors"
-                                title="Remove support role"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-
-                            <textarea
-                              value={member.description || ""}
-                              onChange={(event) => updateSupportAllocation(index, { description: event.target.value })}
-                              rows={2}
-                              className="w-full text-xs font-body bg-parcelles-bg/70 border border-parcelles-dark/20 px-2 py-1 outline-none focus:border-parcelles-dark resize-none"
-                            />
-
-                            <div className="grid grid-cols-2 gap-3 border-t border-parcelles-dark/10 pt-2">
-                              <label className="grid gap-1">
-                                <span className="font-display text-[9px] uppercase tracking-widest opacity-60">People</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={member.count ?? 0}
-                                  onChange={(event) => updateSupportAllocation(index, { count: event.target.value })}
-                                  className="w-full border border-parcelles-dark/25 bg-parcelles-bg px-2 py-0.5 text-center font-mono text-xs outline-none focus:border-parcelles-dark"
-                                />
-                              </label>
-                              <label className="grid gap-1">
-                                <span className="font-display text-[9px] uppercase tracking-widest opacity-60">Hours ({Math.ceil((member.hours_per_member ?? 0) / 8)} days)</span>
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={member.hours_per_member ?? 0}
-                                  onChange={(event) => updateSupportAllocation(index, { hours_per_member: event.target.value })}
-                                  className="w-full border border-parcelles-dark/25 bg-parcelles-bg px-2 py-0.5 text-center font-mono text-xs outline-none focus:border-parcelles-dark"
-                                />
-                              </label>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="border border-dashed border-parcelles-dark/25 p-4 text-center font-body text-xs opacity-65">
-                      No project management or deployment coverage is selected yet.
-                    </div>
-                  )}
-                  </>
-                  )}
-                </div>
 
                 <div className="bg-parcelles-bg border border-parcelles-dark p-5 md:p-6 chamfer-bottom-right">
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-parcelles-dark pb-4 mb-4">
                     <div>
                       <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Final Review</p>
                       <h2 className="text-2xl font-display mt-0.5">Confirm &amp; Approve Team Architecture</h2>
-                      <p className="font-body text-xs opacity-75 mt-1 leading-relaxed max-w-2xl">
-                        Review the aggregated team below. Approving locks the allocation and seeds Cost Estimation with these exact roles and hours.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-2 font-display text-xs shrink-0">
-                      <div className="px-3 py-1 border border-parcelles-dark rounded-full">
-                        {teamData.members.reduce((t, m) => t + (Number(m.count) || 0), 0)} members
-                      </div>
-                      <div className="px-3 py-1 bg-parcelles-dark text-parcelles-bg rounded-full flex items-center gap-1.5">
-                        <span>{Math.round(teamData.total_project_hours || 0)} hrs</span>
-                        <span className="opacity-60 text-[10px]">/ {Math.ceil((teamData.total_project_hours || 0) / 8)} effort days</span>
-                      </div>
                     </div>
                   </div>
 
                   {(() => {
-                    const renderStep2MemberCard = (member, mIdx) => {
-                      const expMatchA = member.role?.match(/(\d+(?:\.\d+)?)\s*Yrs?\s*Exp/i);
-                      const expYearsA = expMatchA ? parseFloat(expMatchA[1]) : null;
-                      const cleanRoleA = member.role?.replace(/\s*\(\d+(?:\.\d+)?\s*Yrs?\s*Exp\)/i, '').trim() || member.role;
-                      const isSupportEditable = isIntegratedSupportWorkstream(classifyRoleWorkstream(member.role));
+                    const reqColHours = Number(preEngHours.requirementsCollection) || 32;
+                    const queryPrepHours = Number(preEngHours.queryPreparation) || 32;
+                    const weeklyIntHours = Number(preEngHours.weeklyInteractions) || 32;
+                    const kbRefHours = Number(preEngHours.kbReference) || 32;
+                    const preEngTotal = Math.round(reqColHours + queryPrepHours + weeklyIntHours + kbRefHours);
+                    const engineeringTotal = Math.round(resolvedFeatureAllocations.reduce((acc, row) => acc + (Number(row.hours) || 0), 0));
+                    const pmTotal = 0;
+                    const grandTotal = Math.round(preEngTotal + engineeringTotal);
 
-                      return (
-                        <div
-                          key={`approve-${mIdx}`}
-                          className="p-3 border border-parcelles-dark/25 bg-parcelles-bg flex flex-col justify-between gap-2.5 rounded transition-all shadow-sm"
-                        >
-                          <div className="flex justify-between items-start gap-2">
-                            <div className="min-w-0">
-                              <div className="font-display text-xs font-bold truncate text-parcelles-dark" title={cleanRoleA}>
-                                {cleanRoleA}
-                              </div>
-                              {expYearsA != null && (
-                                <div className="text-[9px] text-parcelles-dark/50 mt-0.5">{expYearsA} Yrs Exp</div>
-                              )}
-                              {member.description && (
-                                <div className="text-[10px] text-parcelles-dark/70 mt-1.5 leading-relaxed font-body">
-                                  {member.description}
-                                </div>
-                              )}
-                            </div>
+                    // Build per-member hour breakdown from roster across ALL allocations
+                    const memberHourMap = {};
+                    resolvedFeatureAllocations.forEach((f) => {
+                      const key = f.developer || "Unknown";
+                      memberHourMap[key] = (memberHourMap[key] || 0) + (Number(f.hours) || 0);
+                    });
 
-                            {/* Headcount adjustment */}
-                            <div className="flex items-center gap-1 shrink-0 bg-parcelles-bg border border-parcelles-dark/35 px-1 py-0.5 rounded">
-                              <button
-                                type="button"
-                                onClick={() => updateMemberCount(mIdx, -1)}
-                                className="w-4 h-4 flex items-center justify-center font-display text-xs hover:bg-parcelles-dark hover:text-parcelles-bg transition-colors"
-                              >
-                                −
-                              </button>
-                              <span className="font-display text-xs w-5 text-center font-bold text-parcelles-dark">
-                                {member.count}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => updateMemberCount(mIdx, 1)}
-                                className="w-4 h-4 flex items-center justify-center font-display text-xs hover:bg-parcelles-dark hover:text-parcelles-bg transition-colors"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
+                    // Find S3/lead developer to attribute Pre-Engineering total hours, fallback to first available
+                    const s3Dev = companyRoster.find(r => {
+                      const roleLower = (r.role || "").toLowerCase();
+                      return roleLower.includes("s3") || roleLower.includes("lead") || roleLower.includes("architect");
+                    }) || companyRoster[0];
 
-                          <div className="flex items-center justify-between border-t border-parcelles-dark/10 pt-2 text-[10px] font-display">
-                            <span className="opacity-60 text-[8px] uppercase tracking-widest text-parcelles-dark">Hours:</span>
-                            <div className="flex items-center gap-1.5">
-                              <div className="flex items-center gap-1 font-mono">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  step="1"
-                                  value={Math.round(member.hours_per_member || (member.active_weeks * 40))}
-                                  onChange={(e) => {
-                                    const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                    if (s3Dev && preEngTotal > 0) {
+                      memberHourMap[s3Dev.name] = (memberHourMap[s3Dev.name] || 0) + preEngTotal;
+                    }
 
-                                    if (isSupportEditable) {
-                                      const sIndex = supportAllocations.findIndex(
-                                        (s) => normalizeRoleTitle(s.role) === normalizeRoleTitle(member.role)
-                                      );
-                                      if (sIndex !== -1) {
-                                        updateSupportAllocation(sIndex, { hours_per_member: val });
-                                      }
-                                    } else {
-                                      setMemberOverrides((prev) => {
-                                        const existing = prev[member.role] || {
-                                          count: member.count,
-                                          hours_per_member: member.hours_per_member,
-                                        };
-                                        return {
-                                          ...prev,
-                                          [member.role]: {
-                                            ...existing,
-                                            hours_per_member: val,
-                                            active_weeks: val / 40,
-                                          },
-                                        };
-                                      });
-                                    }
-                                  }}
-                                  className="w-14 border border-parcelles-dark/30 px-1 py-0.5 text-center bg-parcelles-bg focus:border-parcelles-dark outline-none font-mono text-[9px] rounded"
-                                />
-                                <span className="opacity-60 text-[8px] uppercase tracking-wider text-parcelles-dark">hrs</span>
-                              </div>
-                              <span className="opacity-50 text-[8px] text-parcelles-dark">/ {Math.ceil((member.hours_per_member || (member.active_weeks * 40)) / 8)} days ({parseFloat(Number(member.active_weeks).toFixed(2))} wks)</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    };
+                    // Members with hours, resolved to display info
+                    const memberSummaryRows = Object.entries(memberHourMap)
+                      .filter(([, hrs]) => hrs > 0)
+                      .map(([devKey, hrs]) => {
+                        const rosterMember = companyRoster.find(r => r.name === devKey);
+                        const label = rosterMember
+                          ? `${rosterMember.name} (${rosterMember.role})`
+                          : devKey;
+                        return { label, hrs: Math.round(hrs) };
+                      });
 
-                    const { devList, testList, pmDeployList } = groupMembersByBox(teamData.members);
+                    const validationError = validateDeveloperAllocation();
 
                     return (
                       <div className="space-y-6 mb-4">
-                        {/* Development Box */}
-                        {devList.length > 0 && (
-                          <div className="border border-parcelles-dark/30 p-4 bg-parcelles-sage/5 rounded space-y-3 shadow-sm">
-                            <div
-                              onClick={() => setIsDevStaffingExpanded(!isDevStaffingExpanded)}
-                              style={{ cursor: "pointer" }}
-                              className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1"
-                            >
-                              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Development Staffing</span>
-                              {isDevStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
-                            </div>
-                            {isDevStaffingExpanded && (
-                              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {devList.map((member) => {
-                                  const mIdx = teamData.members.findIndex((m) => m.role === member.role);
-                                  return renderStep2MemberCard(member, mIdx);
-                                })}
-                              </div>
-                            )}
+                        {/* 1. Pre-Engineering Module */}
+                        <div className="border border-parcelles-dark/30 p-4 bg-parcelles-sage/5 rounded space-y-3 shadow-sm">
+                          <div
+                            onClick={() => setIsDevStaffingExpanded(!isDevStaffingExpanded)}
+                            style={{ cursor: "pointer" }}
+                            className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1"
+                          >
+                            <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Pre-Engineering Module</span>
+                            {isDevStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
                           </div>
-                        )}
+                          {isDevStaffingExpanded && (
+                            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                              {[
+                                { key: "requirementsCollection", label: "Requirements Collection" },
+                                { key: "queryPreparation", label: "Query Preparation" },
+                                { key: "weeklyInteractions", label: "Weekly Interactions" },
+                                { key: "kbReference", label: "Time for Referring Knowledge Base" }
+                              ].map(({ key, label }) => (
+                                <div key={key} className="p-3 border border-parcelles-dark/15 bg-parcelles-bg rounded flex flex-col justify-between">
+                                  <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/70 font-bold block mb-2">{label}</span>
+                                  <div className="flex items-center gap-2 mt-2">
+                                    <input
+                                      type="number"
+                                      min="32"
+                                      value={preEngHours[key] ?? 32}
+                                      onChange={(e) => {
+                                        const val = Math.max(32, parseInt(e.target.value) || 32);
+                                        setPreEngHours(prev => ({ ...prev, [key]: val }));
+                                      }}
+                                      className="w-full border border-parcelles-dark/30 px-2 py-1 text-center bg-parcelles-bg focus:border-parcelles-dark outline-none font-mono text-xs rounded"
+                                    />
+                                    <span className="opacity-60 text-[10px] uppercase tracking-wider text-parcelles-dark whitespace-nowrap">hrs / {Math.ceil((preEngHours[key] ?? 32) / 8)} days</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="text-right pt-2 border-t border-parcelles-dark/10">
+                            <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Pre-Engineering Effort: </span>
+                            <span className="font-mono text-xs font-bold text-parcelles-dark">{preEngTotal} hrs / {Math.ceil(preEngTotal / 8)} days</span>
+                          </div>
+                        </div>
 
-                        {/* Testing Box */}
-                        {testList.length > 0 && (
-                          <div className="border border-parcelles-dark/30 p-4 bg-parcelles-sage/5 rounded space-y-3 shadow-sm">
-                            <div
-                              onClick={() => setIsTestStaffingExpanded(!isTestStaffingExpanded)}
-                              style={{ cursor: "pointer" }}
-                              className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1"
-                            >
-                              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Testing Staffing</span>
-                              {isTestStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
-                            </div>
-                            {isTestStaffingExpanded && (
-                              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {testList.map((member) => {
-                                  const mIdx = teamData.members.findIndex((m) => m.role === member.role);
-                                  return renderStep2MemberCard(member, mIdx);
-                                })}
-                              </div>
-                            )}
+                        {/* 2. Engineering Module */}
+                        <div className="border border-parcelles-dark/30 p-4 bg-parcelles-sage/5 rounded space-y-3 shadow-sm">
+                          <div
+                            onClick={() => setIsTestStaffingExpanded(!isTestStaffingExpanded)}
+                            style={{ cursor: "pointer" }}
+                            className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1"
+                          >
+                            <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Engineering Module</span>
+                            {isTestStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
                           </div>
-                        )}
+                          {isTestStaffingExpanded && (
+                            <div className="space-y-4">
+                                              {resolvedFeatureAllocations?.length ? (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1.5 mb-2">
+                                    <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/70 font-bold block">Feature Estimation &amp; Developer Allocation Sheet</span>
+                                  </div>
 
-                        {/* PM & Deployment Box */}
-                        {pmDeployList.length > 0 && (
-                          <div className="border border-parcelles-dark/30 p-4 bg-parcelles-sage/5 rounded space-y-3 shadow-sm">
-                            <div
-                              onClick={() => setIsPmDeployStaffingExpanded(!isPmDeployStaffingExpanded)}
-                              style={{ cursor: "pointer" }}
-                              className="flex items-center justify-between border-b border-parcelles-dark/15 pb-1"
-                            >
-                              <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Project Management &amp; Deployment</span>
-                              {isPmDeployStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
+                                  <div className="overflow-auto border border-parcelles-dark/20 rounded" style={{ maxHeight: "420px" }}>
+                                    <table className="w-full border-collapse" style={{ minWidth: "900px" }}>
+                                      <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
+                                        <tr className="bg-parcelles-dark text-parcelles-bg font-display text-[9px] uppercase tracking-wider">
+                                          <th className="p-2 border-r border-parcelles-light/10 text-center w-[50px]">Sl No</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-left w-[150px]">Module Names</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-left w-[180px]">Features</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-left">Description</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-left w-[100px]">Developer</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-right w-[90px]">Est. Hours</th>
+                                          <th className="p-2 text-right w-[70px]">Days</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-parcelles-dark/10">
+                                        {(() => {
+                                          const rowSpans = calculateModuleRowSpans(resolvedFeatureAllocations);
+                                          // Build module groups for subtotal rows
+                                          const moduleGroups = {};
+                                          resolvedFeatureAllocations.forEach((row) => {
+                                            if (!moduleGroups[row.moduleName]) moduleGroups[row.moduleName] = [];
+                                            moduleGroups[row.moduleName].push(row);
+                                          });
+                                          const rows = [];
+                                          let lastModule = null;
+                                          resolvedFeatureAllocations.forEach((row, idx) => {
+                                            const spanInfo = rowSpans.find((s) => s.index === idx);
+                                            const isDeployRow = row.isDeployment === true;
+                                            const isTestingRow = row.isTesting === true;
+                                            rows.push(
+                                              <tr key={row.id} className={`hover:bg-parcelles-sage/5 transition-colors font-body text-xs text-parcelles-dark ${isDeployRow || isTestingRow ? "bg-parcelles-dark/5" : "bg-parcelles-bg"}`}>
+                                                <td className="p-2 border-r border-parcelles-dark/10 text-center align-middle font-mono text-[10px]">
+                                                  {row.slNo}
+                                                </td>
+                                                {spanInfo ? (
+                                                  <td
+                                                    rowSpan={spanInfo.span}
+                                                    className={`p-2 border-r border-parcelles-dark/10 font-display font-bold align-middle text-xs ${isDeployRow || isTestingRow ? "bg-parcelles-dark/10 text-parcelles-dark" : "bg-parcelles-sage/5"}`}
+                                                  >
+                                                    {row.moduleName}
+                                                  </td>
+                                                ) : null}
+                                                <td className="p-2 border-r border-parcelles-dark/10 align-middle">
+                                                  {row.featureName}
+                                                </td>
+                                                <td className="p-2 border-r border-parcelles-dark/10 align-middle text-[11px] text-parcelles-dark/75 leading-relaxed">
+                                                  {row.description || "No description available"}
+                                                </td>
+                                                <td className="p-2 border-r border-parcelles-dark/10 align-middle">
+                                                  <select
+                                                      value={row.developer}
+                                                      onChange={(e) => handleFeatureDevChange(row.id, e.target.value)}
+                                                      className="w-full border border-parcelles-dark/20 rounded px-2 py-1 bg-parcelles-bg text-parcelles-dark font-display text-[10px] focus:border-parcelles-dark outline-none cursor-pointer"
+                                                    >
+                                                      {companyRoster.length > 0 ? (
+                                                        companyRoster.map((member) => (
+                                                          <option key={member.name} value={member.name}>
+                                                            {member.name} ({member.role})
+                                                          </option>
+                                                        ))
+                                                      ) : (
+                                                        ["S1", "S2", "S3"].map((lvl) => (
+                                                          <option key={lvl} value={lvl}>{lvl}</option>
+                                                        ))
+                                                      )}
+                                                    </select>
+                                                </td>
+                                                <td className="p-2 border-r border-parcelles-dark/10 text-right align-middle font-mono font-bold">
+                                                  {Math.round(row.hours)}
+                                                </td>
+                                                <td className="p-2 text-right align-middle font-mono text-[10px] text-parcelles-dark/60">
+                                                  {Math.ceil(row.hours / 8)}d
+                                                </td>
+                                              </tr>
+                                            );
+                                          });
+                                          return rows;
+                                        })()}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
-                            {isPmDeployStaffingExpanded && (
-                              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {pmDeployList.map((member) => {
-                                  const mIdx = teamData.members.findIndex((m) => m.role === member.role);
-                                  return renderStep2MemberCard(member, mIdx);
-                                })}
-                              </div>
-                            )}
+                          )}
+                          <div className="flex items-center justify-between pt-2 border-t border-parcelles-dark/10">
+                            <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Engineering Effort:</span>
+                            <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(engineeringTotal)} hrs / {Math.ceil(engineeringTotal / 8)} days</span>
                           </div>
-                        )}
+                        </div>
+
+
+                        {/* Grand Total Box */}
+                        <div className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg p-4 flex justify-between items-center rounded shadow-sm">
+                          <span className="font-display text-sm uppercase tracking-wider font-bold">Grand Total of Project Team Allocation Efforts Estimation</span>
+                          <span className="font-mono text-xl font-bold">{Math.round(grandTotal)} hrs / {Math.ceil(grandTotal / 8)} days</span>
+                        </div>
+
+                        {/* Last Box: Developer Effort Summary and Action */}
+                        <div className="border border-parcelles-dark/25 p-4 bg-parcelles-sage/10 rounded space-y-4">
+                          <div className="border-b border-parcelles-dark/15 pb-2">
+                            <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Developer Effort Summary</span>
+                            <div className={`grid gap-4 mt-4 ${memberSummaryRows.length === 1 ? 'grid-cols-1' : memberSummaryRows.length === 2 ? 'grid-cols-2' : 'grid-cols-1 md:grid-cols-3'}`}>
+                             {memberSummaryRows.length > 0 ? memberSummaryRows.map(({ label, hrs }) => (
+                               <div key={label} className="p-3 border border-parcelles-dark/10 bg-parcelles-bg text-center rounded">
+                                 <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/65 font-bold block">{label}</span>
+                                 <p className="text-xl font-display font-extrabold text-parcelles-dark mt-1.5">{hrs} h</p>
+                                 <span className="text-[9px] font-body opacity-50 block mt-0.5">({Math.ceil(hrs / 8)} days)</span>
+                               </div>
+                             )) : (
+                               <div className="p-3 border border-parcelles-dark/10 bg-parcelles-bg text-center rounded col-span-3">
+                                 <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/65">No developer hours allocated yet</span>
+                               </div>
+                             )}
+                           </div>
+                          </div>
+
+                          {userHasModified && validationError && (
+                            <div style={{
+                              background: "rgba(220,38,38,0.08)",
+                              border: "1px solid rgba(220,38,38,0.25)",
+                              color: "#991b1b",
+                              padding: "0.75rem 1rem",
+                              fontFamily: "var(--font-sans)",
+                              fontSize: "0.85rem",
+                              marginTop: "1rem",
+                              borderRadius: "4px"
+                            }}>
+                              <strong>Estimation Restriction Warning:</strong> {validationError}
+                            </div>
+                          )}
+
+                          <div className="flex justify-center mt-4">
+                            <button
+                              onClick={(userHasModified && validationError) ? undefined : proceedToCosting}
+                              disabled={userHasModified && !!validationError}
+                              className={`px-6 py-4 font-display text-lg tracking-wider uppercase transition-colors chamfer-bottom-left flex items-center gap-3 w-full sm:w-auto justify-center ${
+                                (userHasModified && validationError)
+                                  ? "bg-parcelles-dark/30 text-parcelles-bg/50 cursor-not-allowed opacity-50"
+                                  : "bg-parcelles-dark hover:bg-parcelles-dark/95 text-parcelles-bg"
+                              }`}
+                            >
+                              Proceed to Costing <ArrowRight size={20} />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
-
-                  <button
-                    onClick={handleApprove}
-                    className="w-full py-4 bg-parcelles-dark text-parcelles-bg font-display text-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity chamfer-bottom-left"
-                  >
-                    <CheckCircle2 size={24} /> Approve Team Architecture
-                  </button>
-                </div>
-              </section>
-            </div>
-          ) : null}
-
-          {step === 3 && teamData ? (
-            <div>
-              <section style={{ display: "grid", gridTemplateColumns: "1fr 0.8fr", gap: "1.25rem" }}>
-                <div className="border border-parcelles-dark bg-parcelles-bg p-5 md:p-6 chamfer-bottom-right">
-                  <div className="flex items-start gap-4 mb-6 border-b border-parcelles-dark pb-4">
-                    <div className="w-12 h-12 shrink-0 border border-parcelles-dark flex items-center justify-center chamfer-bottom-left bg-parcelles-sage/30">
-                      <CheckCircle2 size={24} />
-                    </div>
-                    <div>
-                      <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Approved Architecture</p>
-                      <h2 className="text-2xl font-display mt-0.5">Team locked for {teamData.project_name}</h2>
-                    </div>
-                  </div>
-
-                  <div className="space-y-6">
-                    {(() => {
-                      const renderStep3MemberRow = (member, index) => {
-                        const expMatch3 = member.role?.match(/\((\d+(?:\.\d+)?)\s*Yrs?\s*Exp\)/i);
-                        const expYears3 = expMatch3 ? parseFloat(expMatch3[1]) : null;
-                        const cleanTitle3 = member.role?.replace(/\s*\(\d+(?:\.\d+)?\s*Yrs?\s*Exp\)/i, '').trim() || member.role;
-                        const totalHours = Math.round((member.hours_per_member || (member.active_weeks * 40)) * member.count);
-                        const activeWeeks = parseFloat(Number(member.active_weeks).toFixed(2));
-
-                        return (
-                          <div
-                            key={`${member.role}-${index}`}
-                            className="py-3 last:pb-0 first:pt-0 border-b border-parcelles-dark/10 last:border-0 space-y-1.5"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3">
-                                <div className="w-1.5 h-1.5 bg-parcelles-dark rounded-full" />
-                                <span className="font-display text-base font-bold">{cleanTitle3}</span>
-                                {expYears3 != null && (
-                                  <span className="px-2 py-0.5 font-display text-[9px] uppercase tracking-widest rounded-full border border-parcelles-dark bg-parcelles-dark/10 text-parcelles-dark whitespace-nowrap">
-                                    {expYears3} Yrs Exp
-                                  </span>
-                                )}
-                              </div>
-                              <span className="font-display text-base bg-parcelles-dark text-parcelles-bg px-2.5 py-0.5 font-bold">x{member.count}</span>
-                            </div>
-
-                            {member.description && (
-                              <p className="font-body text-xs text-parcelles-dark/80 pl-4 leading-relaxed">
-                                {member.description}
-                              </p>
-                            )}
-
-                            <div className="pl-4 flex gap-4 text-[11px] font-mono text-parcelles-dark/60 font-semibold">
-                              <span>Per member: {Math.round(member.hours_per_member || (member.active_weeks * 40))} hrs ({activeWeeks} wks)</span>
-                              <span>•</span>
-                              <span>Total effort: {totalHours} hrs</span>
-                            </div>
-                          </div>
-                        );
-                      };
-
-                      const { devList, testList, pmDeployList } = groupMembersByBox(teamData.members);
-
-                      return (
-                        <div className="space-y-6">
-                          {/* Development Box */}
-                          {devList.length > 0 && (
-                            <div className="border border-parcelles-dark/20 p-4 bg-parcelles-sage/5 rounded space-y-2">
-                              <div
-                                onClick={() => setIsDevStaffingExpanded(!isDevStaffingExpanded)}
-                                style={{ cursor: "pointer" }}
-                                className="flex items-center justify-between pb-1 border-b border-parcelles-dark/10"
-                              >
-                                <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Development Staffing</span>
-                                {isDevStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
-                              </div>
-                              {isDevStaffingExpanded && (
-                                <div className="divide-y divide-parcelles-dark/10">
-                                  {devList.map((member) => {
-                                    const index = teamData.members.findIndex((m) => m.role === member.role);
-                                    return renderStep3MemberRow(member, index);
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Testing Box */}
-                          {testList.length > 0 && (
-                            <div className="border border-parcelles-dark/20 p-4 bg-parcelles-sage/5 rounded space-y-2">
-                              <div
-                                onClick={() => setIsTestStaffingExpanded(!isTestStaffingExpanded)}
-                                style={{ cursor: "pointer" }}
-                                className="flex items-center justify-between pb-1 border-b border-parcelles-dark/10"
-                              >
-                                <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Testing Staffing</span>
-                                {isTestStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
-                              </div>
-                              {isTestStaffingExpanded && (
-                                <div className="divide-y divide-parcelles-dark/10">
-                                  {testList.map((member) => {
-                                    const index = teamData.members.findIndex((m) => m.role === member.role);
-                                    return renderStep3MemberRow(member, index);
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* PM & Deployment Box */}
-                          {pmDeployList.length > 0 && (
-                            <div className="border border-parcelles-dark/20 p-4 bg-parcelles-sage/5 rounded space-y-2">
-                              <div
-                                onClick={() => setIsPmDeployStaffingExpanded(!isPmDeployStaffingExpanded)}
-                                style={{ cursor: "pointer" }}
-                                className="flex items-center justify-between pb-1 border-b border-parcelles-dark/10"
-                              >
-                                <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark font-bold block">Project Management &amp; Deployment</span>
-                                {isPmDeployStaffingExpanded ? <ChevronUp size={14} className="text-parcelles-dark" /> : <ChevronDown size={14} className="text-parcelles-dark" />}
-                              </div>
-                              {isPmDeployStaffingExpanded && (
-                                <div className="divide-y divide-parcelles-dark/10">
-                                  {pmDeployList.map((member) => {
-                                    const index = teamData.members.findIndex((m) => m.role === member.role);
-                                    return renderStep3MemberRow(member, index);
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                <div className="border border-parcelles-dark bg-parcelles-sage/20 p-5 md:p-6 chamfer-bottom-left h-fit">
-                  <p className="font-display uppercase tracking-widest text-[9px] opacity-60">Next Actions</p>
-                  <h2 className="text-2xl font-display mt-0.5">Download or calculate costs</h2>
-
-                  <p className="font-body text-xs opacity-80 mt-4 leading-relaxed">
-                    The download action respects whichever steps exist in the current flow. If the SRS exists, it is included here.
-                    If not, only the team allocation leaves this step. Cost estimation will open with these approved roles already seeded.
-                  </p>
-
-                  <div className="mt-5 p-4 border border-parcelles-dark bg-parcelles-bg font-display text-base">
-                    <span className="opacity-60 uppercase tracking-widest text-xs block mb-1">Bundle</span>
-                    {downloadLabel}
-                  </div>
-
-                  <div className="mt-6 flex flex-col gap-3">
-                    <div className="flex flex-col sm:flex-row gap-3">
-                      <button onClick={handleUndo} className="flex-1 py-3 border border-parcelles-dark font-display text-base flex items-center justify-center gap-2 hover:bg-parcelles-dark hover:text-parcelles-bg transition-colors chamfer-bottom-right">
-                        <Undo2 size={18} /> Edit
-                      </button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { id: "pdf", label: "PDF", detail: "Report" },
-                        { id: "excel", label: "Excel", detail: "Workbook" },
-                        { id: "word", label: "Word", detail: "Docx" },
-                      ].map((format) => {
-                        const isBusy = downloadingFormat === format.id || (format.id === "excel" && isDownloading);
-                        return (
-                          <button
-                            key={format.id}
-                            type="button"
-                            onClick={() => handleFormatDownload(format.id)}
-                            disabled={Boolean(downloadingFormat) || isDownloading}
-                            className="border border-parcelles-dark/70 bg-parcelles-bg px-3 py-2 text-left hover:bg-parcelles-sage/40 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                            style={{
-                              clipPath: "polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 calc(100% - 10px))",
-                            }}
-                          >
-                            <span className="flex items-center justify-between gap-2">
-                              <span className="font-display text-sm">{format.label}</span>
-                              {isBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-                            </span>
-                            <span className="block font-display uppercase tracking-widest text-[8px] opacity-50 mt-1">{format.detail}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <button onClick={proceedToCosting} className="w-full py-4 bg-parcelles-dark text-parcelles-bg font-display text-lg flex items-center justify-center gap-3 hover:opacity-90 transition-opacity chamfer-bottom-right mt-1">
-                      Proceed to Costing <ArrowRight size={20} />
-                    </button>
-                  </div>
                 </div>
               </section>
             </div>

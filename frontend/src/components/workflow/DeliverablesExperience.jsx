@@ -6,7 +6,7 @@ import { ArrowRight, Download, FileSpreadsheet, FolderOutput, ScrollText, Users,
 import { PageIntro } from "@/components/workflow/PageIntro";
 import { useWorkflow } from "@/context/WorkflowContext";
 import { getAvailableDeliverables } from "@/lib/deliverableBundle";
-import { exportTeamExcel, triggerAssetDownload } from "@/lib/platformApi";
+import { exportTeamExcel, exportCostExcel, exportBundle, triggerAssetDownload } from "@/lib/platformApi";
 import { ScrollReveal } from "@/components/ui/ScrollReveal";
 import { HorizontalMarquee } from "@/components/ui/HorizontalMarquee";
 
@@ -217,7 +217,13 @@ export function DeliverablesExperience() {
                           </button>
 
                           <button
-                            onClick={() => triggerAssetDownload(srsData.xlsxPath || srsData.xlsx_path)}
+                            onClick={async () => {
+                              if (deliverables.hasTeam && deliverables.hasCost) {
+                                await exportBundle({ srs: srsData, team: deliverables.teamData, cost: deliverables.costData });
+                              } else {
+                                triggerAssetDownload(srsData.xlsxPath || srsData.xlsx_path);
+                              }
+                            }}
                             style={{
                               padding: "0.75rem 1rem",
                               border: "1px solid currentColor",
@@ -287,6 +293,115 @@ export function DeliverablesExperience() {
                         >
                           <Download size={16} strokeWidth={1.5} />
                           Export Excel
+                        </button>
+                      </article>
+                    </ScrollReveal>
+                  )}
+
+                  {deliverables.hasCost && (
+                    <ScrollReveal variant="slide-up" delay={200}>
+                      <article
+                        className="card-invert"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "1.5rem",
+                          padding: "1.25rem 1.5rem",
+                          border: "1px solid #0A1C16",
+                          transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "56px", height: "56px", flexShrink: 0,
+                            border: "1px solid currentColor", display: "flex",
+                            alignItems: "center", justifyContent: "center",
+                            transition: "border-color 0.4s ease",
+                            clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)",
+                          }}
+                        >
+                          <FileSpreadsheet size={26} strokeWidth={1} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: "1.3rem", letterSpacing: "-0.01em" }}>
+                            Cost Estimation (Excel)
+                          </p>
+                          <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", opacity: 0.65, marginTop: "0.25rem", lineHeight: 1.5, fontWeight: 300 }}>
+                            Financial models, pricing margins, and PM overhead breakdown.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => exportCostExcel(deliverables.costData)}
+                          style={{
+                            flexShrink: 0,
+                            padding: "0.75rem 1.5rem",
+                            border: "1px solid currentColor",
+                            background: "transparent",
+                            fontFamily: "var(--font-display)", fontSize: "0.75rem",
+                            letterSpacing: "0.15em", textTransform: "uppercase",
+                            display: "flex", alignItems: "center", gap: "0.5rem",
+                            transition: "all 0.3s ease",
+                            cursor: "pointer",
+                            clipPath: "polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+                          }}
+                        >
+                          <Download size={16} strokeWidth={1.5} />
+                          Export Excel
+                        </button>
+                      </article>
+                    </ScrollReveal>
+                  )}
+
+                  {deliverables.hasSrs && deliverables.hasTeam && deliverables.hasCost && (
+                    <ScrollReveal variant="slide-up" delay={250}>
+                      <article
+                        className="card-invert"
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "1.5rem",
+                          padding: "1.25rem 1.5rem",
+                          border: "1px solid #0A1C16",
+                          background: "rgba(10,28,22,0.05)",
+                          transition: "all 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: "56px", height: "56px", flexShrink: 0,
+                            border: "1px solid currentColor", display: "flex",
+                            alignItems: "center", justifyContent: "center",
+                            transition: "border-color 0.4s ease",
+                            clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%)",
+                          }}
+                        >
+                          <FolderOutput size={26} strokeWidth={1} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: "1.3rem", letterSpacing: "-0.01em" }}>
+                            Consolidated Master Workbook (Excel)
+                          </p>
+                          <p style={{ fontFamily: "var(--font-sans)", fontSize: "0.85rem", opacity: 0.65, marginTop: "0.25rem", lineHeight: 1.5, fontWeight: 300 }}>
+                            Complete project deliverable: SRS requirements, resource staffing, and formula-driven cost estimation in a single workbook.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => exportBundle({ srs: srsData, team: deliverables.teamData, cost: deliverables.costData })}
+                          style={{
+                            flexShrink: 0,
+                            padding: "0.75rem 1.5rem",
+                            border: "1px solid currentColor",
+                            background: "transparent",
+                            fontFamily: "var(--font-display)", fontSize: "0.75rem",
+                            letterSpacing: "0.15em", textTransform: "uppercase",
+                            display: "flex", alignItems: "center", gap: "0.5rem",
+                            transition: "all 0.3s ease",
+                            cursor: "pointer",
+                            clipPath: "polygon(0 0, 100% 0, 100% 100%, 12px 100%, 0 calc(100% - 12px))",
+                          }}
+                        >
+                          <Download size={16} strokeWidth={1.5} />
+                          Export Bundle
                         </button>
                       </article>
                     </ScrollReveal>

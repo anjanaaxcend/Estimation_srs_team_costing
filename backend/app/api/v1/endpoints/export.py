@@ -22,12 +22,15 @@ from app.services.planning_sync import (
     calculate_cost_totals,
     determine_project_weeks,
     safe_float,
+    is_testing_role,
+    is_deployment_role,
+    is_management_role,
 )
 
 router = APIRouter()
 
 def _make_styles():
-    """Unified professional styling for ScopeSense AI Excel exports."""
+    """Unified professional styling for Estimator AI Excel exports."""
     # Palette format strictly flat B&W
     BLACK = "000000"
     WHITE = "FFFFFF"
@@ -172,15 +175,13 @@ async def export_excel(
             for est in req_del.feature_estimates:
                 dev_hrs = sum(d.days * 8 for d in est.developer_days)
                 test_hrs = sum(t.days * 8 for t in est.tester_days)
-                total_feat_hrs = dev_hrs + test_hrs
-                total_all_hrs += total_feat_hrs
                 _write_data_row(ws3, row, [
                     est.module_name or "General",
                     est.feature_name,
                     est.complexity.upper(),
-                    dev_hrs,
-                    test_hrs,
-                    total_feat_hrs
+                    int(round(dev_hrs)),
+                    int(round(test_hrs)),
+                    f"=ROUND(D{row}+E{row}, 0)"
                 ], s, alt=(row % 2 == 0))
                 row += 1
         elif req.features:
@@ -191,16 +192,17 @@ async def export_excel(
                     feat.complexity.upper(),
                     40, # Default dev hours
                     16, # Default test hours
-                    56
+                    f"=ROUND(D{row}+E{row}, 0)"
                 ], s, alt=(row % 2 == 0))
-                total_all_hrs += 56
                 row += 1
             
-        if total_all_hrs > 0:
+        if row > 2:
             total_row = row + 1
             ws3.cell(row=total_row, column=1, value="TOTAL RECOMMENDED PROJECT HOURS").font = s["bold_font"]
             ws3.merge_cells(f"A{total_row}:E{total_row}")
-            c_total = ws3.cell(row=total_row, column=6, value=total_all_hrs)
+            for col in range(1, 6):
+                ws3.cell(row=total_row, column=col).border = s["border"]
+            c_total = ws3.cell(row=total_row, column=6, value=f"=ROUND(SUM(F2:F{row-1}), 0)")
             c_total.font = s["bold_font"]
             c_total.alignment = s["center"]
             c_total.border = s["border"]
@@ -213,7 +215,7 @@ async def export_excel(
 
     wb.save(output)
     output.seek(0)
-    filename = f"{data.title.replace(' ', '_')}_ScopeSense_SRS.xlsx"
+    filename = f"{data.title.replace(' ', '_')}_Estimator_SRS.xlsx"
     return Response(
         content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -243,7 +245,7 @@ async def export_team_excel(
     ws.title = "Resource Allocation"
 
     ws.merge_cells("A1:C1")
-    ws["A1"] = f"TEAM DESIGN: {data.get('project_name', 'ScopeSense Project')}"
+    ws["A1"] = f"TEAM DESIGN: {data.get('project_name', 'Estimator Project')}"
     ws["A1"].font = s["title_font"]
     ws["A1"].fill = s["navy_fill"]
     ws["A1"].alignment = s["center"]
@@ -272,7 +274,7 @@ async def export_team_excel(
 
     wb.save(output)
     output.seek(0)
-    filename = f"{data.get('project_name', 'Project').replace(' ', '_')}_ScopeSense_Team.xlsx"
+    filename = f"{data.get('project_name', 'Project').replace(' ', '_')}_Estimator_Team.xlsx"
     return Response(
         content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -281,7 +283,7 @@ async def export_team_excel(
 
 
 def _team_project_name(data: dict) -> str:
-    return data.get("project_name") or "ScopeSense Project"
+    return data.get("project_name") or "Estimator Project"
 
 
 def _team_members(data: dict) -> list[dict]:
@@ -328,7 +330,7 @@ async def export_team_docx(
     output = io.BytesIO()
     document.save(output)
     output.seek(0)
-    filename = f"{project_name.replace(' ', '_')}_ScopeSense_Team.docx"
+    filename = f"{project_name.replace(' ', '_')}_Estimator_Team.docx"
     return Response(
         content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -390,7 +392,7 @@ async def export_team_pdf(
     doc.build(story)
     output.seek(0)
 
-    filename = f"{project_name.replace(' ', '_')}_ScopeSense_Team.pdf"
+    filename = f"{project_name.replace(' ', '_')}_Estimator_Team.pdf"
     return Response(
         content=output.getvalue(),
         media_type="application/pdf",
@@ -425,7 +427,7 @@ async def export_bundle(
         (srs.structured_requirements.project_name if srs.structured_requirements else None)
         or cost.project_name
         or team.get("project_name")
-        or "ScopeSense Project"
+        or "Estimator Project"
     )
     totals = calculate_cost_totals(cost)
     total_weeks = determine_project_weeks(cost, team.get("total_working_weeks", 0) or 0)
@@ -501,20 +503,27 @@ async def export_bundle(
     row = 4
     team_notes = {str(member.get("role", "")).lower(): member.get("description", "") for member in team.get("members", [])}
     for member in cost.members:
-        total_hours = safe_float(member.count) * safe_float(member.hours_per_member)
         _write_data_row(ws_team, row, [
             member.role,
-            member.count,
-            member.weekly_hours,
-            member.hours_per_member,
-            total_hours,
+            int(round(safe_float(member.count))),
+            int(round(safe_float(member.weekly_hours))),
+            int(round(safe_float(member.hours_per_member))),
+            f"=ROUND(B{row}*D{row}, 0)",
             team_notes.get(member.role.lower(), "")
         ], s, alt=(row % 2 == 0), bold_first=True)
         row += 1
+    
     ws_team.cell(row=row + 1, column=1, value="TOTAL PROJECT HOURS").font = s["bold_font"]
-    ws_team.cell(row=row + 1, column=2, value=totals["total_project_hours"]).font = s["bold_font"]
+    c_tot_hrs = ws_team.cell(row=row + 1, column=5, value=f"=ROUND(SUM(E4:E{row-1}), 0)")
+    c_tot_hrs.font = s["bold_font"]
+    c_tot_hrs.border = s["border"]
+    c_tot_hrs.alignment = s["center"]
+    
     ws_team.cell(row=row + 2, column=1, value="TOTAL WORKING WEEKS").font = s["bold_font"]
-    ws_team.cell(row=row + 2, column=2, value=total_weeks).font = s["bold_font"]
+    c_tot_wks = ws_team.cell(row=row + 2, column=3, value=int(round(total_weeks)))
+    c_tot_wks.font = s["bold_font"]
+    c_tot_wks.border = s["border"]
+    c_tot_wks.alignment = s["center"]
 
     ws_team.column_dimensions["A"].width = 30
     ws_team.column_dimensions["B"].width = 15
@@ -525,55 +534,118 @@ async def export_bundle(
 
     # ── Sheet 4: Cost Estimation (Financials) ───────────────────────────────────
     ws_cost = wb.create_sheet("4. Cost Estimation")
-    ws_cost.merge_cells("A1:C1")
+    ws_cost.merge_cells("A1:G1")
     ws_cost["A1"] = f"COST ESTIMATION: {project_name}"
     ws_cost["A1"].font = s["title_font"]
     ws_cost["A1"].fill = s["navy_fill"]
     ws_cost["A1"].alignment = s["center"]
     ws_cost.row_dimensions[1].height = 40
 
-    member_breakdown = totals.get("member_breakdown", [])
     _write_header_row(
         ws_cost,
         3,
-        ["Component", "Calculation / Breakdown", f"Total ({cost.currency})"],
+        ["Role", "Count", f"Hourly Rate ({cost.currency})", "Weekly Hours", "Hours / Member", f"Cost / Employee ({cost.currency})", f"Total ({cost.currency})"],
         s,
     )
 
+    dev_rows = []
+    test_rows = []
+    deploy_rows = []
+
     row = 4
     for item in member_breakdown:
-        label = f"{item['role']} x {item['count']}"
-        calc = (
-            f"{item['count']} employees x {cost.currency} {item['hourly_rate']:,.2f}/hr x "
-            f"{item['hours_per_member']:,.2f} hrs/member = {cost.currency} {item['cost_per_employee']:,.2f}/employee"
-        )
-        _write_data_row(ws_cost, row, [label, calc, f"{cost.currency} {item['total']:,.2f}"], s, alt=(row % 2 == 0))
+        role_name = item["role"]
+        if not is_management_role(role_name):
+            if is_testing_role(role_name):
+                test_rows.append(row)
+            elif is_deployment_role(role_name):
+                deploy_rows.append(row)
+            else:
+                dev_rows.append(row)
+
+        values = [
+            role_name,
+            item["count"],
+            item["hourly_rate"],
+            item["weekly_hours"],
+            item["hours_per_member"],
+            f"=C{row}*E{row}",
+            f"=B{row}*F{row}",
+        ]
+        for col_idx, val in enumerate(values, 1):
+            c = ws_cost.cell(row=row, column=col_idx, value=val)
+            c.font = s["normal_font"]
+            c.border = s["border"]
+            c.alignment = s["left"] if col_idx == 1 else s["center"]
+            if col_idx in (3, 6, 7):
+                c.number_format = f'"{cost.currency}" #,##0'
         row += 1
 
-    cost_data = [
-        ("Development Total Cost", "All non-QA role costs", totals["development_total"]),
-        ("Testing Total Cost", "All QA and testing role costs", totals["testing_total"]),
-        ("Deployment Total Cost", "All deployment/DevOps role costs", totals["deployment_total"]),
-        ("Team Salary Total", f"{len(cost.members)} roles x allocated hours", totals["salary_total"]),
-        ("Project Management", "Technical lead and management overhead", totals["project_management"]),
-        ("Miscellaneous Costs", "Calculated project overheads and contingencies", totals["misc_total"]),
-        ("Project Total Cost Estimation", "Development + testing + management + miscellaneous", totals["project_total_estimation"]),
-        ("Profit Slabs", "Explicit profit items only", totals["profit_total"]),
+    member_end_row = row - 1
+
+    salary_total = totals.get("salary_total", 0)
+    pm_cost = totals.get("project_management", 0)
+    pm_ratio = (pm_cost / salary_total) if salary_total > 0 else 0.10
+
+    effort_subtotal = salary_total + pm_cost + totals.get("misc_total", 0)
+    risk_cost = totals.get("risk_contingency", 0)
+    risk_ratio = (risk_cost / effort_subtotal) if effort_subtotal > 0 else 0.10
+
+    nego_cost = totals.get("negotiation_buffer", 0)
+    nego_ratio = (nego_cost / effort_subtotal) if effort_subtotal > 0 else 0.05
+
+    summary_start = row + 2
+    summary_rows = [
+        ("Development Total Cost", f"=ROUND(SUM({','.join(f'G{r}' for r in dev_rows)}), 0)" if dev_rows else "=0"),
+        ("Testing Total Cost", f"=ROUND(SUM({','.join(f'G{r}' for r in test_rows)}), 0)" if test_rows else "=0"),
+        ("Deployment Total Cost", f"=ROUND(SUM({','.join(f'G{r}' for r in deploy_rows)}), 0)" if deploy_rows else "=0"),
+        ("Team Salary Total", f"=ROUND(SUM(G4:G{member_end_row}), 0)"),
+        ("Project Management", f"=ROUND(G{summary_start+3}*{pm_ratio}, 0)"),
+        ("Miscellaneous Costs", int(round(totals.get("misc_total", 0)))),
+        ("Risk Contingency", f"=ROUND((G{summary_start+3}+G{summary_start+4}+G{summary_start+5})*{risk_ratio}, 0)"),
+        ("Negotiation Buffer", f"=ROUND((G{summary_start+3}+G{summary_start+4}+G{summary_start+5})*{nego_ratio}, 0)"),
+        ("Project Total Cost Estimation", f"=ROUND(G{summary_start+3}+G{summary_start+4}+G{summary_start+5}+G{summary_start+6}+G{summary_start+7}, 0)"),
+        ("Profit Slabs", int(round(totals.get("profit_total", 0)))),
     ]
-    
-    for label, calc, total in cost_data:
-        _write_data_row(ws_cost, row, [label, calc, f"{cost.currency} {total:,.2f}"], s, alt=(row % 2 == 0))
-        row += 1
+
+    for offset, (label, formula_or_value) in enumerate(summary_rows):
+        curr_row = summary_start + offset
+        ws_cost.merge_cells(start_row=curr_row, start_column=1, end_row=curr_row, end_column=6)
+        label_cell = ws_cost.cell(row=curr_row, column=1, value=label)
+        value_cell = ws_cost.cell(row=curr_row, column=7, value=formula_or_value)
         
-    total_row = row + 1
-    ws_cost.cell(row=total_row, column=1, value="GRAND TOTAL ESTIMATION").font = s["bold_font"]
-    c_total = ws_cost.cell(row=total_row, column=3, value=f"{cost.currency} {totals['grand_total']:,.2f}")
-    c_total.font = Font(name="Calibri", size=12, bold=True, color="000000")
-    c_total.alignment = s["center"]
+        label_cell.font = s["bold_font"]
+        value_cell.font = s["bold_font"]
+        label_cell.border = s["border"]
+        value_cell.border = s["border"]
+        label_cell.alignment = s["left"]
+        value_cell.alignment = s["center"]
+        value_cell.number_format = f'"{cost.currency}" #,##0'
+        for col_idx in range(2, 7):
+            ws_cost.cell(row=curr_row, column=col_idx).border = s["border"]
+
+    grand_total_row = summary_start + len(summary_rows) + 1
+    ws_cost.merge_cells(start_row=grand_total_row, start_column=1, end_row=grand_total_row, end_column=6)
+    label_cell = ws_cost.cell(row=grand_total_row, column=1, value="GRAND TOTAL ESTIMATION")
+    value_cell = ws_cost.cell(row=grand_total_row, column=7, value=f"=ROUND(G{summary_start+8}+G{summary_start+9}, 0)")
     
-    ws_cost.column_dimensions["A"].width = 25
-    ws_cost.column_dimensions["B"].width = 50
-    ws_cost.column_dimensions["C"].width = 25
+    label_cell.font = s["bold_font"]
+    value_cell.font = Font(name="Calibri", size=12, bold=True, color="000000")
+    label_cell.border = s["border"]
+    value_cell.border = s["border"]
+    label_cell.alignment = s["left"]
+    value_cell.alignment = s["center"]
+    value_cell.number_format = f'"{cost.currency}" #,##0'
+    for col_idx in range(2, 7):
+        ws_cost.cell(row=grand_total_row, column=col_idx).border = s["border"]
+
+    ws_cost.column_dimensions["A"].width = 30
+    ws_cost.column_dimensions["B"].width = 15
+    ws_cost.column_dimensions["C"].width = 18
+    ws_cost.column_dimensions["D"].width = 15
+    ws_cost.column_dimensions["E"].width = 18
+    ws_cost.column_dimensions["F"].width = 20
+    ws_cost.column_dimensions["G"].width = 25
 
     # ── Sheet 5: Gantt Chart (Timeline & Cost) ──────────────────────────────────
     ws_gantt = wb.create_sheet("5. Gantt Chart")
@@ -590,21 +662,27 @@ async def export_bundle(
     
     g_row = 4
     for entry in timeline_rows:
-        vals = [entry["label"], entry["hours"], f"{entry['cost']:,.2f}"] + entry["markers"]
+        vals = [entry["label"], int(round(entry["hours"])), int(round(entry["cost"]))] + entry["markers"]
         _write_data_row(ws_gantt, g_row, vals, s, alt=(g_row % 2 == 0))
+        ws_gantt.cell(row=g_row, column=3).number_format = f'"{cost.currency}" #,##0'
         g_row += 1
             
     # Summary Info after Gantt
     g_row += 2
-    summaries = [
-        ("TOTAL PROJECT TIME (HOURS)", f"{int(round(totals['total_project_hours']))} Hours"),
-        ("TOTAL WORKING WEEKS", str(total_weeks)),
-        ("GRAND TOTAL COST", f"{cost.currency} {totals['grand_total']:,.2f}"),
-    ]
-    for label, val in summaries:
-        ws_gantt.cell(row=g_row, column=1, value=label).font = s["bold_font"]
-        ws_gantt.cell(row=g_row, column=2, value=val).font = s["normal_font"]
-        g_row += 1
+    
+    ws_gantt.cell(row=g_row, column=1, value="TOTAL PROJECT TIME (HOURS)").font = s["bold_font"]
+    ws_gantt.cell(row=g_row, column=2, value=f"=ROUND(SUM(B4:B{g_row-3}), 0)").font = s["normal_font"]
+    g_row += 1
+    
+    ws_gantt.cell(row=g_row, column=1, value="TOTAL WORKING WEEKS").font = s["bold_font"]
+    ws_gantt.cell(row=g_row, column=2, value=int(round(total_weeks))).font = s["normal_font"]
+    g_row += 1
+    
+    ws_gantt.cell(row=g_row, column=1, value="GRAND TOTAL COST").font = s["bold_font"]
+    c_gantt_total = ws_gantt.cell(row=g_row, column=2, value=f"=ROUND(SUM(C4:C{g_row-5}), 0)")
+    c_gantt_total.font = s["normal_font"]
+    c_gantt_total.number_format = f'"{cost.currency}" #,##0'
+    g_row += 1
 
     for column_index in range(1, len(headers) + 1):
         col_let = get_column_letter(column_index)
@@ -613,7 +691,7 @@ async def export_bundle(
     wb.save(output)
     output.seek(0)
     
-    filename = f"{project_name.replace(' ', '_')}_ScopeSense_Master.xlsx"
+    filename = f"{project_name.replace(' ', '_')}_Estimator_Master.xlsx"
     return Response(
         content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

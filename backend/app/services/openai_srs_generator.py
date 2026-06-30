@@ -40,9 +40,7 @@ class OpenAISRSGenerator:
             return False
         config = self._provider_config(selected_model)
         provider = config["provider"]
-        # Ollama: just needs a model name — connection errors surface at request time
-        if provider == "ollama":
-            return settings.ollama_srs_enabled and bool(config["model"])
+
         # Gemini: needs both a model name and an API key configured
         if provider == "gemini":
             return bool(config["model"]) and bool(config["api_key"])
@@ -275,10 +273,6 @@ class OpenAISRSGenerator:
                 or (getattr(exc, "__class__", None) and "ConnectionRefused" in type(exc).__name__)
             )
             if is_connection_error:
-                if provider == "ollama":
-                    raise RuntimeError(
-                        "Ollama is not running. Please start Ollama locally (`ollama serve`) and ensure the model is pulled before generating."
-                    ) from exc
                 raise RuntimeError(
                     f"Could not connect to the {provider} API endpoint. Check your API base URL and network connection."
                 ) from exc
@@ -403,10 +397,6 @@ class OpenAISRSGenerator:
                     or (getattr(exc, "__class__", None) and "ConnectionRefused" in type(exc).__name__)
                 )
                 if is_connection_error:
-                    if provider == "ollama":
-                        raise RuntimeError(
-                            "Ollama is not running. Please start Ollama locally (`ollama serve`) and ensure the configured backend model is pulled before generating."
-                        ) from exc
                     raise RuntimeError(
                         f"Could not connect to the {provider} API endpoint. Check your backend API base URL and network connection."
                     ) from exc
@@ -1338,10 +1328,7 @@ class OpenAISRSGenerator:
         if provider == "gemini":
             # Gemini supports large context but does NOT accept response_format
             base["max_tokens"] = 8192
-        elif provider == "ollama":
-            # Ollama local models have limited context but DO accept response_format to guarantee valid JSON
-            base["response_format"] = {"type": "json_object"}
-            base["max_tokens"] = 4096
+
         elif provider == "anthropic":
             # Anthropic models are routed through messages API which expects max_tokens
             base["max_tokens"] = 4096
@@ -1359,11 +1346,7 @@ class OpenAISRSGenerator:
         if provider == "anthropic":
             return [runtime_model or "claude-3-5-sonnet-latest"]
 
-        if provider == "ollama":
-            return unique_model_candidates(
-                [runtime_model, settings.ollama_srs_model],
-                settings.ollama_srs_fallback_models,
-            )
+
 
         if provider == "gemini":
             return unique_model_candidates(
@@ -1401,13 +1384,7 @@ class OpenAISRSGenerator:
                 "api_key": runtime_key or "",
             }
 
-        if provider == "ollama":
-            return {
-                "provider": "ollama",
-                "model": (selected_model.model if selected_model and selected_model.model else settings.ollama_srs_model),
-                "base_url": (selected_model.base_url if selected_model and selected_model.base_url else settings.ollama_api_base),
-                "api_key": runtime_key or settings.ollama_api_key or "ollama",
-            }
+
 
         if provider == "gemini":
             return {
@@ -1436,7 +1413,7 @@ class OpenAISRSGenerator:
         # Both Ollama and Gemini need explicit JSON-only instructions because
         # we cannot use response_format={"type":"json_object"} with them.
         provider_preamble = ""
-        if provider in ("ollama", "gemini", "anthropic"):
+        if provider in ("gemini", "anthropic"):
             provider_preamble = dedent("""
             CRITICAL INSTRUCTION:
             You MUST output ONLY a single valid JSON object. Nothing else.

@@ -48,7 +48,7 @@ class DeliveryPlanData(BaseModel):
 
 
 class ModelSelection(BaseModel):
-    provider: Literal["openai", "ollama", "gemini", "anthropic"] = "openai"
+    provider: Literal["openai", "gemini", "anthropic"] = "openai"
     model: str | None = None
     base_url: str | None = None
     api_key: str | None = None   # runtime override (never stored)

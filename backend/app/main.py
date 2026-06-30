@@ -14,73 +14,67 @@ import app.models.user  # import models so Base knows about them
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # Initialize database
+    # Initialize database — creates all tables that don't exist yet
     Base.metadata.create_all(bind=engine)
-    
-    # Ensure SQLite has the new columns
-    from sqlalchemy import text
+
+    # ---------------------------------------------------------------------------
+    # Safe column-migration guards.
+    # Uses information_schema.columns for PostgreSQL (transaction-safe).
+    # Falls back to the old SELECT … LIMIT 1 trick for SQLite.
+    # ---------------------------------------------------------------------------
+    from sqlalchemy import text, inspect as sa_inspect
+
+    is_pg = "postgresql" in str(engine.url)
+
+    def _col_exists(conn, table: str, column: str) -> bool:
+        if is_pg:
+            row = conn.execute(
+                text(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = :t AND column_name = :c"
+                ),
+                {"t": table, "c": column},
+            ).fetchone()
+            return row is not None
+        else:
+            # SQLite: try a SELECT; if it raises the column is missing
+            try:
+                conn.execute(text(f"SELECT {column} FROM {table} LIMIT 1"))
+                return True
+            except Exception:
+                return False
+
+    def _add_col(conn, table: str, column: str, col_def: str):
+        if not _col_exists(conn, table, column):
+            try:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}"))
+                print(f"  ✓ Added column {table}.{column}")
+            except Exception as e:
+                print(f"  ✗ Could not add {table}.{column}: {e}")
+
     with engine.begin() as conn:
-        try:
-            conn.execute(text("SELECT reset_otp FROM users LIMIT 1"))
-        except Exception:
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN reset_otp VARCHAR"))
-            except Exception as e:
-                print(f"Error adding reset_otp column: {e}")
-        
-        try:
-            conn.execute(text("SELECT reset_otp_expires_at FROM users LIMIT 1"))
-        except Exception:
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN reset_otp_expires_at DATETIME"))
-            except Exception as e:
-                print(f"Error adding reset_otp_expires_at column: {e}")
+        # users table
+        _add_col(conn, "users", "reset_otp", "VARCHAR")
+        _add_col(conn, "users", "reset_otp_expires_at", "TIMESTAMP")
+        _add_col(conn, "users", "is_admin", "BOOLEAN DEFAULT FALSE")
 
-        # Ensure temporary_srs table has new columns
-        for column_name in ["team_content", "cost_content", "document_hash"]:
-            try:
-                conn.execute(text(f"SELECT {column_name} FROM temporary_srs LIMIT 1"))
-            except Exception:
-                try:
-                    conn.execute(text(f"ALTER TABLE temporary_srs ADD COLUMN {column_name} TEXT"))
-                except Exception as e:
-                    print(f"Error adding {column_name} to temporary_srs table: {e}")
+        # temporary_srs table
+        for col in ["team_content", "cost_content", "axcend_estimation_content", "document_hash"]:
+            _add_col(conn, "temporary_srs", col, "TEXT")
 
-        # Ensure approved_srs table has new columns
-        for column_name in ["team_content", "cost_content", "document_hash"]:
-            try:
-                conn.execute(text(f"SELECT {column_name} FROM approved_srs LIMIT 1"))
-            except Exception:
-                try:
-                    conn.execute(text(f"ALTER TABLE approved_srs ADD COLUMN {column_name} TEXT"))
-                except Exception as e:
-                    print(f"Error adding {column_name} to approved_srs table: {e}")
+        # approved_srs table
+        for col in ["team_content", "cost_content", "axcend_estimation_content", "document_hash"]:
+            _add_col(conn, "approved_srs", col, "TEXT")
 
-        # Ensure users table has is_admin column
-        try:
-            conn.execute(text("SELECT is_admin FROM users LIMIT 1"))
-        except Exception:
-            try:
-                conn.execute(text("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0 NOT NULL"))
-            except Exception as e:
-                print(f"Error adding is_admin to users: {e}")
-
-        # Ensure user_plans table exists with all columns (created by Base.metadata.create_all above,
-        # but we guard for existing deployments)
-        for column_name, col_def in [
+        # user_plans table
+        for col, col_def in [
             ("plan", "VARCHAR DEFAULT 'free'"),
             ("token_budget_monthly", "INTEGER DEFAULT 50000"),
             ("tokens_used_this_month", "INTEGER DEFAULT 0"),
-            ("window_start", "DATETIME"),
-            ("updated_at", "DATETIME"),
+            ("window_start", "TIMESTAMP"),
+            ("updated_at", "TIMESTAMP"),
         ]:
-            try:
-                conn.execute(text(f"SELECT {column_name} FROM user_plans LIMIT 1"))
-            except Exception:
-                try:
-                    conn.execute(text(f"ALTER TABLE user_plans ADD COLUMN {column_name} {col_def}"))
-                except Exception as e:
-                    print(f"Error adding {column_name} to user_plans: {e}")
+            _add_col(conn, "user_plans", col, col_def)
 
     settings.generated_dir.mkdir(parents=True, exist_ok=True)
     yield

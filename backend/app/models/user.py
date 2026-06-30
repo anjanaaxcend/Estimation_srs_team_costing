@@ -27,7 +27,7 @@ class UserHistory(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     action = Column(String, nullable=False)          # e.g. "SRS Generated"
     project_name = Column(String, nullable=True)     # project name from SRS
-    provider = Column(String, nullable=True)         # gemini | ollama | openai
+    provider = Column(String, nullable=True)         # gemini | openai
     sections_count = Column(Integer, nullable=True)  # number of SRS sections
     details = Column(Text, nullable=True)            # extra JSON metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -44,6 +44,7 @@ class TemporarySRS(Base):
     content = Column(Text, nullable=False)  # JSON-serialized SRSGenerationResult
     team_content = Column(Text, nullable=True)  # JSON-serialized TeamDesign
     cost_content = Column(Text, nullable=True)  # JSON-serialized CostEstimation
+    axcend_estimation_content = Column(Text, nullable=True)  # JSON-serialized AxcendEstimationSheet
     document_hash = Column(String, index=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -59,6 +60,7 @@ class ApprovedSRS(Base):
     content = Column(Text, nullable=False)  # JSON-serialized approved SRS output
     team_content = Column(Text, nullable=True)  # JSON-serialized approved TeamDesign
     cost_content = Column(Text, nullable=True)  # JSON-serialized approved CostEstimation
+    axcend_estimation_content = Column(Text, nullable=True)  # JSON-serialized approved AxcendEstimationSheet
     document_hash = Column(String, index=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -100,7 +102,7 @@ class UserApiKey(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    provider = Column(String, nullable=False)  # openai | gemini | ollama | anthropic
+    provider = Column(String, nullable=False)  # openai | gemini | anthropic
     encrypted_key = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -115,7 +117,7 @@ class TokenUsageLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     session_id = Column(String, index=True, nullable=True)
-    provider = Column(String, nullable=False)       # openai | gemini | ollama
+    provider = Column(String, nullable=False)       # openai | gemini
     model = Column(String, nullable=True)
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)

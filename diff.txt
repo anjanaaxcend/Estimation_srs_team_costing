@@ -1,0 +1,236 @@
+﻿diff --git a/frontend/src/components/workflow/AxcendCostEstimation.jsx b/frontend/src/components/workflow/AxcendCostEstimation.jsx
+index f807b66..561a1d4 100644
+--- a/frontend/src/components/workflow/AxcendCostEstimation.jsx
++++ b/frontend/src/components/workflow/AxcendCostEstimation.jsx
+@@ -23,7 +23,7 @@ import {
+   Settings,
+ } from "lucide-react";
+ import { loadApprovedTeam } from "@/lib/workflowArtifacts";
+-import { exportAxcendExcel } from "@/lib/platformApi";
++import { exportAxcendExcel, getExchangeRates } from "@/lib/platformApi";
+ import { loadAxcendEstimationDraft } from "@/lib/axcendEstimationStorage";
+ 
+ // ΓöÇΓöÇΓöÇ helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+@@ -45,6 +45,26 @@ const fmtCost = (n, curr = "USD") => {
+   }).format(Math.round(n));
+ };
+ 
++const CURRENCY_SYMBOLS = {
++  USD: "$",
++  INR: "Γé╣",
++  EUR: "Γé¼",
++  GBP: "┬ú",
++  JPY: "┬Ñ",
++  AED: "╪».╪Ñ",
++  SGD: "$",
++  AUD: "$",
++  CAD: "$"
++};
++const getCurrencySymbol = (currency) => CURRENCY_SYMBOLS[currency] || "$";
++
++const calculateHourlyPay = (years, currency = "INR") => {
++  const y = Number(years) || 0;
++  if (y >= 10) return 50;
++  if (y >= 5) return 45;
++  return 40;
++};
++
+ // ΓöÇΓöÇΓöÇ S-Level badge ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ 
+ const SLEVEL_STYLES = {
+@@ -64,7 +84,7 @@ function SLevelBadge({ level }) {
+ 
+ // ΓöÇΓöÇΓöÇ Editable number cell ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ 
+-function EditCell({ value, onChange, prefix = "", suffix = "", minVal = 0, step = 1, width = "80px", accent = false }) {
++function EditCell({ value, onChange, prefix = "", suffix = "", minVal = 0, step = 1, width = "80px", accent = false, title = "Click to edit" }) {
+   const [editing, setEditing] = useState(false);
+   const [local, setLocal] = useState(String(value ?? ""));
+ 
+@@ -91,7 +111,7 @@ function EditCell({ value, onChange, prefix = "", suffix = "", minVal = 0, step
+   ) : (
+     <span
+       onClick={() => { setLocal(String(value ?? "")); setEditing(true); }}
+-      title="Click to edit"
++      title={title}
+       style={{ minWidth: width }}
+       className={`cursor-pointer font-display text-xs px-1 py-0.5 text-right underline decoration-dotted decoration-parcelles-dark/30 hover:bg-parcelles-sage/25 inline-block ${accent ? "text-emerald-800 bg-emerald-50/50" : "text-parcelles-dark"}`}
+     >
+@@ -121,6 +141,38 @@ function StatPill({ label, value, unit }) {
+ // ΓöÇΓöÇΓöÇ Main Component ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+ 
+ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
++  const [activeCurrency, setActiveCurrency] = useState(currency || "USD");
++  const [rates, setRates] = useState({
++    USD: 1.0,
++    INR: 83.5,
++    EUR: 0.92,
++    GBP: 0.78,
++    AED: 3.67,
++    SGD: 1.35,
++    AUD: 1.50,
++    CAD: 1.37,
++    JPY: 155.0,
++  });
++  const [loadingRates, setLoadingRates] = useState(false);
++
++  // Fetch real-time exchange rates from public API on mount via our backend proxy
++  useEffect(() => {
++    const fetchRates = async () => {
++      setLoadingRates(true);
++      try {
++        const liveRates = await getExchangeRates();
++        if (liveRates && Object.keys(liveRates).length > 0) {
++          setRates(liveRates);
++        }
++      } catch (e) {
++        console.warn("Failed to fetch real-time exchange rates, using fallback rates:", e);
++      } finally {
++        setLoadingRates(false);
++      }
++    };
++    fetchRates();
++  }, []);
++
+   const [preEngHours, setPreEngHours] = useState(128);
+   const [s1Hours, setS1Hours] = useState(0);
+   const [s2Hours, setS2Hours] = useState(0);
+@@ -140,6 +192,11 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+   const [loaded, setLoaded]         = useState(false);
+   const [exporting, setExporting] = useState(false);
+ 
++  const handleCurrencyChange = (newCurrency) => {
++    if (newCurrency === activeCurrency) return;
++    setActiveCurrency(newCurrency);
++  };
++
+   // Initialize values from the saved Axcend estimation first, then fall back to approved team data.
+   useEffect(() => {
+     const approvedTeam = loadApprovedTeam();
+@@ -152,9 +209,9 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+       setPmPct(Math.round(Number(estimationDraft.effort_percentages.pm_pct || 0) * 100));
+     }
+ 
+-    let rateS1 = 320;
+-    let rateS2 = 360;
+-    let rateS3 = 400;
++    let rateS1 = calculateHourlyPay(2, activeCurrency) * 8;
++    let rateS2 = calculateHourlyPay(8, activeCurrency) * 8;
++    let rateS3 = calculateHourlyPay(12, activeCurrency) * 8;
+ 
+     try {
+       const teamDraftRaw = window.localStorage.getItem("ai-project-planner-team-draft-v1");
+@@ -164,7 +221,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+         roster.forEach((r) => {
+           const roleLower = (r.role || "").toLowerCase();
+           const exp = Number(r.experience_years) || 0;
+-          const rate = exp >= 10 ? 400 : exp >= 5 ? 360 : 320;
++          const rate = calculateHourlyPay(exp, activeCurrency) * 8;
+           if (roleLower.includes("s3") || exp >= 10) rateS3 = rate;
+           else if (roleLower.includes("s2") || exp >= 5) rateS2 = rate;
+           else rateS1 = rate;
+@@ -389,7 +446,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+ 
+       const payload = {
+         project_name: prjName,
+-        currency,
++        currency: activeCurrency,
+         modules,
+         pre_engineering,
+         engineering,
+@@ -432,7 +489,7 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+     );
+   }
+ 
+-  const curr = currency;
++  const curr = activeCurrency;
+ 
+   return (
+     <div className="w-full font-sans space-y-6">
+@@ -450,6 +507,29 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+           </div>
+ 
+           <div className="flex items-center gap-3 flex-wrap">
++            {/* Currency Selector */}
++            <div className="flex items-center gap-2 border border-parcelles-light/20 bg-parcelles-light/10 px-3 py-2 text-parcelles-light font-display text-xs uppercase rounded flex-wrap">
++              <span className="opacity-60 font-semibold tracking-wider">Currency:</span>
++              <select
++                value={activeCurrency}
++                onChange={(e) => handleCurrencyChange(e.target.value)}
++                disabled={loadingRates}
++                className="bg-transparent border-none outline-none font-bold text-parcelles-light cursor-pointer pr-1 hover:text-white transition-colors"
++                style={{ colorScheme: "dark" }}
++              >
++                <option value="USD" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>USD ($)</option>
++                <option value="INR" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>INR (Γé╣)</option>
++                <option value="EUR" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>EUR (Γé¼)</option>
++                <option value="GBP" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>GBP (┬ú)</option>
++                <option value="AED" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>AED (╪».╪Ñ)</option>
++                <option value="SGD" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>SGD ($)</option>
++                <option value="AUD" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>AUD ($)</option>
++                <option value="CAD" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>CAD ($)</option>
++                <option value="JPY" className="text-parcelles-dark bg-parcelles-bg" style={{ color: "#0A1C16", backgroundColor: "#F5F3EE" }}>JPY (┬Ñ)</option>
++              </select>
++              {loadingRates && <Loader2 size={12} className="animate-spin opacity-60" />}
++            </div>
++
+             {/* Settings button */}
+             <button
+               onClick={() => setShowSettings((p) => !p)}
+@@ -556,10 +636,16 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+                   onChange={(v) => setS3Rate(v)}
+                   width="70px"
+                   accent
++                  title="Click to edit daily rate"
+                 />
+               </td>
+-              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
+-                {fmtCost(result.s3Cost, curr)}
++              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
++                <div className="flex flex-col items-end">
++                  <span className="font-bold text-parcelles-dark">{fmtCost(result.s3Cost, curr)}</span>
++                  <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
++                    {result.s3ManDays}d ├ù {getCurrencySymbol(curr)}{s3Rate}
++                  </span>
++                </div>
+               </td>
+             </tr>
+ 
+@@ -584,10 +670,16 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+                   onChange={(v) => setS2Rate(v)}
+                   width="70px"
+                   accent
++                  title="Click to edit daily rate"
+                 />
+               </td>
+-              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
+-                {fmtCost(result.s2Cost, curr)}
++              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
++                <div className="flex flex-col items-end">
++                  <span className="font-bold text-parcelles-dark">{fmtCost(result.s2Cost, curr)}</span>
++                  <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
++                    {result.s2ManDays}d ├ù {getCurrencySymbol(curr)}{s2Rate}
++                  </span>
++                </div>
+               </td>
+             </tr>
+ 
+@@ -612,10 +704,16 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD" }) {
+                   onChange={(v) => setS1Rate(v)}
+                   width="70px"
+                   accent
++                  title="Click to edit daily rate"
+                 />
+               </td>
+-              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right font-bold">
+-                {fmtCost(result.s1Cost, curr)}
++              <td className="p-2.5 font-display text-xs text-parcelles-dark border-r border-parcelles-dark/10 last:border-r-0 text-right">
++                <div className="flex flex-col items-end">
++                  <span className="font-bold text-parcelles-dark">{fmtCost(result.s1Cost, curr)}</span>
++                  <span className="text-[9px] text-parcelles-dark/40 font-mono block mt-0.5 whitespace-nowrap">
++                    {result.s1ManDays}d ├ù {getCurrencySymbol(curr)}{s1Rate}
++                  </span>
++                </div>
+               </td>
+             </tr>
+ 

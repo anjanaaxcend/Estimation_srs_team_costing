@@ -19,7 +19,7 @@ from app.services.token_service import (
 
 router = APIRouter()
 
-VALID_PROVIDERS = {"openai", "groq", "gemini", "ollama", "anthropic"}
+VALID_PROVIDERS = {"openai", "groq", "gemini", "anthropic"}
 
 
 # ── Plan Info ────────────────────────────────────────────────────────────────

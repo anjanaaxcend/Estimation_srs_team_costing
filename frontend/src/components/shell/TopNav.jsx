@@ -19,7 +19,7 @@ export function TopNav() {
         {/* Logo */}
         <div className="p-6 border-b-strong lg:border-b-0 lg:border-r-strong flex items-center justify-center min-w-[240px]">
           <Link href="/" className="font-display text-3xl font-bold italic tracking-tight">
-            ScopeSense
+            Estimator
           </Link>
         </div>
 

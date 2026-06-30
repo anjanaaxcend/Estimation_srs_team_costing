@@ -34,35 +34,7 @@ def providers_status() -> dict:
             "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
             "fallback_models": list(settings.gemini_srs_fallback_models),
         },
-        "ollama": {
-            "enabled": settings.ollama_srs_enabled,
-            "has_key": True,  # Ollama doesn't need an API key
-            "model": settings.ollama_srs_model,
-            "base_url": settings.ollama_api_base,
-            "fallback_models": list(settings.ollama_srs_fallback_models),
-        },
     }
-
-
-@router.get("/health/ollama-models")
-def list_ollama_models() -> dict:
-    """Fetch locally installed Ollama models by querying Ollama's API."""
-    import json
-    from urllib.parse import urlparse
-    from urllib.request import urlopen, Request
-    try:
-        parsed = urlparse(settings.ollama_api_base)
-        root_url = f"{parsed.scheme}://{parsed.netloc}"
-        req = Request(f"{root_url}/api/tags", headers={"User-Agent": "ScopeSense-Backend"})
-        with urlopen(req, timeout=2.0) as response:
-            if response.status == 200:
-                data = json.loads(response.read().decode("utf-8"))
-                models = [m["name"] for m in data.get("models", [])]
-                # Also strip standard tag suffix (e.g. :latest) for clean display if desired
-                return {"status": "ok", "models": models}
-            return {"status": "error", "message": f"Ollama returned status code {response.status}"}
-    except Exception as e:
-        return {"status": "error", "message": f"Could not reach Ollama: {e}"}
 
 
 @router.get("/health/rate-limit")
@@ -93,11 +65,6 @@ def get_rate_limit(engine: str = "openai") -> dict:
         base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
         model = settings.gemini_srs_model or "gemini-2.5-flash-lite"
         console_url = "https://ai.dev/rate-limit"
-    elif engine == "ollama":
-        # Ollama has no rate-limit; return a static sentinel so the UI stays clean
-        result = {"engine": "ollama", "status": "local", "note": "No rate-limits — local model"}
-        _rate_limit_cache[engine] = (now, result)
-        return result
     else:
         # Default: Groq / OpenAI-compatible endpoint
         api_key = settings.openai_api_key

@@ -45,7 +45,7 @@ export default function HistoryPage() {
   );
 
   return (
-    <div className="w-full min-h-screen bg-[var(--bg-primary)] p-8 lg:p-16">
+    <div className="w-full min-h-screen bg-[var(--bg-primary)] pb-12" style={{ paddingTop: "clamp(4.25rem, 5.5vw, 5rem)", paddingLeft: "clamp(1.5rem, 5vw, 5rem)", paddingRight: "clamp(1.5rem, 5vw, 5rem)" }}>
       <div className="max-w-4xl mx-auto">
         <ScrollReveal variant="slide-up">
           <div className="section-tag mb-8" style={{ display: "inline-flex" }}>

@@ -1,13 +1,17 @@
 import { exportBundle, exportCostExcel, exportTeamExcel, triggerAssetDownload } from "@/lib/platformApi";
 import { loadApprovedTeam } from "@/lib/workflowArtifacts";
+import { loadCostDraft } from "@/lib/costEstimationStorage";
 
-export const getAvailableDeliverables = ({ srsData, teamData } = {}) => {
+export const getAvailableDeliverables = ({ srsData, teamData, costData } = {}) => {
   const resolvedTeam = teamData ?? loadApprovedTeam();
+  const resolvedCost = costData ?? loadCostDraft();
 
   return {
     hasSrs: Boolean(srsData?.xlsxPath),
     hasTeam: Boolean(resolvedTeam?.members?.length),
+    hasCost: Boolean(resolvedCost?.members?.length),
     teamData: resolvedTeam,
+    costData: resolvedCost,
   };
 };
 
@@ -23,10 +27,11 @@ export const getDeliverableBundleLabel = ({ hasSrs, hasTeam, hasCost } = {}) => 
 };
 
 export const downloadDeliverableBundle = async ({ srsData, teamData, costPayload } = {}) => {
-  const { hasSrs, hasTeam, teamData: resolvedTeam } = getAvailableDeliverables({ srsData, teamData });
+  const { hasSrs, hasTeam, hasCost, teamData: resolvedTeam, costData: resolvedCost } = getAvailableDeliverables({ srsData, teamData });
+  const activeCost = costPayload ?? resolvedCost;
 
-  if (hasSrs && hasTeam && costPayload) {
-    await exportBundle({ srs: srsData, team: resolvedTeam, cost: costPayload });
+  if (hasSrs && hasTeam && activeCost) {
+    await exportBundle({ srs: srsData, team: resolvedTeam, cost: activeCost });
     return { hasSrs, hasTeam, hasCost: true };
   }
 
@@ -38,13 +43,13 @@ export const downloadDeliverableBundle = async ({ srsData, teamData, costPayload
     await exportTeamExcel(resolvedTeam);
   }
 
-  if (costPayload) {
-    await exportCostExcel(costPayload);
+  if (activeCost) {
+    await exportCostExcel(activeCost);
   }
 
   return {
     hasSrs,
     hasTeam,
-    hasCost: Boolean(costPayload),
+    hasCost: Boolean(activeCost),
   };
 };

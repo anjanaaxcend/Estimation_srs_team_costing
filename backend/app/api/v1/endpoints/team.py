@@ -10,6 +10,8 @@ from app.models.user import User
 from app.services.team_allocation_service import TeamAllocationService
 from app.schemas.team import TeamAllocationDocumentResult, TeamStructure, TeamAnalysisResult, CompanyResource, TeamPlanningPreferences
 from app.schemas.srs import ModelSelection
+from app.schemas.axcend import AxcendEstimationSheet, AxcendEstimationPercentages
+from app.services.axcend_estimation_service import AxcendEstimationService
 from app.services.ingestion.utils import normalize_input
 from app.services.token_service import check_token_budget, get_effective_api_key, record_token_usage
 from pathlib import Path
@@ -263,4 +265,60 @@ async def extract_text_team_endpoint(
             )
         return result
     except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# NEW: Build Axcend Effort Estimation from team analysis
+# ---------------------------------------------------------------------------
+
+class AxcendEstimationRequest(BaseModel):
+    """
+    Request to convert an AI TeamAnalysisResult into an AXCEND Effort
+    Estimation sheet.  Percentages are always derived from the analysis
+    result or user-supplied overrides — never hard-coded.
+    """
+    analysis: TeamAnalysisResult
+    selected_option: str = "balanced"   # "fastest" | "balanced" | "lean"
+    company_roster: list[CompanyResource] | None = None
+    location: str = "India"
+    # User can override any of these ratios; defaults mirror the Excel
+    internal_testing_pct: float = 0.20   # 20 % of D&D
+    client_testing_pct: float = 0.10     # 10 % of D&D
+    deployment_pct: float = 0.10         # 10 % of D&D
+    pm_pct: float = 0.10                 # 10 % of base effort
+    risk_pct: float = 0.10               # 10 % of total estimation
+    negotiation_pct: float = 0.05        # 5  % of total estimation
+
+
+@router.post("/build-axcend-estimation", response_model=AxcendEstimationSheet)
+async def build_axcend_estimation_endpoint(
+    body: AxcendEstimationRequest,
+    current_user: User | None = Depends(get_optional_user),
+) -> AxcendEstimationSheet:
+    """
+    Convert a completed TeamAnalysisResult into the AXCEND Effort Estimation
+    format — three separate panels (Pre-Engineering, Engineering, Project
+    Management) — with percentages sourced from the request, not hard-coded.
+    """
+    pct = AxcendEstimationPercentages(
+        internal_testing_pct=body.internal_testing_pct,
+        client_testing_pct=body.client_testing_pct,
+        deployment_pct=body.deployment_pct,
+        pm_pct=body.pm_pct,
+        risk_pct=body.risk_pct,
+        negotiation_pct=body.negotiation_pct,
+    )
+
+    service = AxcendEstimationService()
+    try:
+        return service.build(
+            analysis=body.analysis,
+            roster=body.company_roster,
+            selected_option=body.selected_option,
+            percentages_override=pct,
+            location=body.location,
+        )
+    except Exception as exc:
+        logger.error("Failed to build Axcend estimation: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=str(exc)) from exc

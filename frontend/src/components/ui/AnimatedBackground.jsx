@@ -82,6 +82,29 @@ export function AnimatedBackground() {
       }
       ctx.restore();
 
+      // ── Technical Grid Overlay ────────────────────────────────
+      ctx.save();
+      ctx.strokeStyle = "rgba(10, 28, 22, 0.035)";
+      ctx.lineWidth = 0.5;
+      const gridSize = 48; // Grid square size in pixels
+      
+      // Vertical lines
+      for (let x = 0; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      
+      // Horizontal lines
+      for (let y = 0; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
       // ── Tile the pre-built grain texture ──────────────────────
       const pattern = ctx.createPattern(grainCanvas, "repeat");
       if (pattern) {

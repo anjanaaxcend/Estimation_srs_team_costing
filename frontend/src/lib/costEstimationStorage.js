@@ -30,7 +30,7 @@ export const clearCostDraft = () => {
 
 export const createCostDraftFromTeamData = (teamData, defaultHours = 160) => ({
   project_name: teamData?.project_name || "",
-  currency: "INR",
+  currency: teamData?.currency || "INR",
   isFromApprovedTeam: true,
   source_summary: teamData?.logic_summary || "",
   members: (teamData?.members || [])
@@ -41,7 +41,7 @@ export const createCostDraftFromTeamData = (teamData, defaultHours = 160) => ({
       count: String(member.count ?? 0),
       hourly_rate: String(member.hourly_rate ?? ""),
       // Store the original INR base rate so it can be restored exactly on back-conversion
-      base_inr_rate: member.hourly_rate ? String(member.hourly_rate) : undefined,
+      base_inr_rate: teamData?.currency === "INR" && member.hourly_rate ? String(member.hourly_rate) : undefined,
       weekly_hours: String(member.weekly_hours ?? teamData?.weekly_hours_per_member ?? 40),
       hours_per_member: String(
         member.hours_per_member

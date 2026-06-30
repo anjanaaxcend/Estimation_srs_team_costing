@@ -486,8 +486,8 @@ class SRSGeneratorService:
             # Styles
             header_fill = PatternFill(start_color="333333", end_color="333333", fill_type="solid")
             header_font = Font(color="FFFFFF", bold=True)
-            module_fill = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")
-            gantt_fill = PatternFill(start_color="0078D4", end_color="0078D4", fill_type="solid")
+            module_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+            gantt_fill = PatternFill(start_color="B4C6E7", end_color="B4C6E7", fill_type="solid")
 
             # Team Recommendation Header
             gantt.merge_cells("A1:E1")

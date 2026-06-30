@@ -39,6 +39,21 @@ def _clean_project_name_from_title(raw_title: str) -> str:
     return raw_title.strip()
 
 
+def convert_camel_to_snake(data):
+    import re
+    def camel_to_snake_str(name: str) -> str:
+        s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
+        return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
+
+    if isinstance(data, dict):
+        return {camel_to_snake_str(k): convert_camel_to_snake(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [convert_camel_to_snake(x) for x in data]
+    else:
+        return data
+
+
+
 def compute_text_hash(text: str) -> str:
     if not text:
         return ""
@@ -77,6 +92,7 @@ def save_temp_draft_full(
     content: str,
     team_content: str | None,
     cost_content: str | None,
+    axcend_estimation_content: str | None,
     document_hash: str | None,
 ):
     if not user and not session_id:
@@ -96,6 +112,7 @@ def save_temp_draft_full(
             existing_draft.project_name = _clean_project_name_from_title(project_name)
         existing_draft.team_content = team_content
         existing_draft.cost_content = cost_content
+        existing_draft.axcend_estimation_content = axcend_estimation_content
         existing_draft.document_hash = document_hash
     else:
         new_draft = TemporarySRS(
@@ -105,6 +122,7 @@ def save_temp_draft_full(
             content=content,
             team_content=team_content,
             cost_content=cost_content,
+            axcend_estimation_content=axcend_estimation_content,
             document_hash=document_hash,
         )
         db.add(new_draft)
@@ -121,6 +139,7 @@ def get_existing_srs_for_hash(
     if approved:
         try:
             srs_data = json.loads(approved.content)
+            srs_data = convert_camel_to_snake(srs_data)
             # Sanitize project_name inside structured_requirements if it
             # was previously stored with the full SRS title suffix.
             if isinstance(srs_data.get("structured_requirements"), dict):
@@ -134,6 +153,7 @@ def get_existing_srs_for_hash(
                 content=approved.content,
                 team_content=approved.team_content,
                 cost_content=approved.cost_content,
+                axcend_estimation_content=approved.axcend_estimation_content,
                 document_hash=h,
             )
             return SRSGenerationResult(**srs_data)
@@ -145,6 +165,7 @@ def get_existing_srs_for_hash(
     if temp:
         try:
             srs_data = json.loads(temp.content)
+            srs_data = convert_camel_to_snake(srs_data)
             save_temp_draft_full(
                 db=db,
                 user=user,
@@ -153,6 +174,7 @@ def get_existing_srs_for_hash(
                 content=temp.content,
                 team_content=temp.team_content,
                 cost_content=temp.cost_content,
+                axcend_estimation_content=temp.axcend_estimation_content,
                 document_hash=h,
             )
             return SRSGenerationResult(**srs_data)
@@ -209,6 +231,7 @@ def find_existing_matching_srs(
     for draft in temp_query.order_by(TemporarySRS.updated_at.desc()).all():
         try:
             draft_data = json.loads(draft.content)
+            draft_data = convert_camel_to_snake(draft_data)
             draft_cleaned = draft_data.get("cleaned_text") or ""
             if not draft_cleaned and draft_data.get("structured_requirements"):
                 draft_cleaned = draft_data["structured_requirements"].get("normalized_text") or ""
@@ -224,6 +247,7 @@ def find_existing_matching_srs(
         for app_srs in approved_query.order_by(ApprovedSRS.created_at.desc()).all():
             try:
                 app_data = json.loads(app_srs.content)
+                app_data = convert_camel_to_snake(app_data)
                 app_cleaned = app_data.get("cleaned_text") or ""
                 if not app_cleaned:
                     app_cleaned = app_data.get("normalized_text") or ""
@@ -567,6 +591,7 @@ def save_feedback(
     doc_hash = temp_draft.document_hash if temp_draft else None
     team_content = temp_draft.team_content if temp_draft else None
     cost_content = temp_draft.cost_content if temp_draft else None
+    axcend_estimation_content = temp_draft.axcend_estimation_content if temp_draft else None
         
     if current_user:
         history = UserHistory(
@@ -588,6 +613,7 @@ def save_feedback(
             content=json.dumps(payload.extracted),
             team_content=team_content,
             cost_content=cost_content,
+            axcend_estimation_content=axcend_estimation_content,
             document_hash=doc_hash,
         )
         db.add(approved_srs_record)
@@ -674,6 +700,7 @@ def get_temp_draft(
         "draft": json.loads(draft.content),
         "team_draft": json.loads(draft.team_content) if draft.team_content else None,
         "cost_draft": json.loads(draft.cost_content) if draft.cost_content else None,
+        "axcend_draft": json.loads(draft.axcend_estimation_content) if draft.axcend_estimation_content else None,
         "updated_at": draft.updated_at.isoformat() if draft.updated_at else None
     }
 
@@ -775,6 +802,48 @@ def save_temp_cost_draft(
         db.add(draft)
     
     draft.cost_content = json.dumps(payload.draft)
+    db.commit()
+    return {"status": "saved"}
+
+
+class SaveAxcendDraftRequest(BaseModel):
+    draft: dict
+
+
+@router.post("/temp-draft/axcend")
+def save_temp_axcend_draft(
+    payload: SaveAxcendDraftRequest,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+    x_session_id: str | None = Header(None),
+):
+    query = db.query(TemporarySRS)
+    if current_user:
+        query = query.filter(TemporarySRS.user_id == current_user.id)
+    else:
+        query = query.filter(TemporarySRS.session_id == x_session_id)
+    
+    draft = query.first()
+    if not draft:
+        project_name = None
+        if payload.draft:
+            project_name = (
+                payload.draft.get("projectName")
+                or payload.draft.get("project_name")
+                or "Unnamed Project"
+            )
+        else:
+            project_name = "Unnamed Project"
+            
+        draft = TemporarySRS(
+            user_id=current_user.id if current_user else None,
+            session_id=x_session_id if not current_user else None,
+            project_name=project_name,
+            content="{}",
+        )
+        db.add(draft)
+    
+    draft.axcend_estimation_content = json.dumps(payload.draft)
     db.commit()
     return {"status": "saved"}
 
