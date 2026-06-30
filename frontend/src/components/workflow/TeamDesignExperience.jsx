@@ -535,26 +535,46 @@ const initializeFeatureList = (srs, companyRoster) => {
     s2Limit = totalFeatures;
   }
 
-  // Assign actual roster member names via round-robin within each level slice
-  let s3Counter = 0, s2Counter = 0, s1Counter = 0;
-  featureList.forEach((feat, index) => {
-    let assignedMember = null;
+  // Helper to get assigned developer based on level slice and 70/30 split rule for 2 developers of same level
+  const getAssignedDeveloper = (index) => {
     if (index < s3Limit && hasS3) {
-      assignedMember = s3Members[s3Counter % s3Members.length];
-      s3Counter++;
-    } else if (index < s2Limit && hasS2) {
-      assignedMember = s2Members[s2Counter % s2Members.length];
-      s2Counter++;
-    } else if (hasS1) {
-      assignedMember = s1Members[s1Counter % s1Members.length];
-      s1Counter++;
-    } else if (hasS2) {
-      assignedMember = s2Members[s2Counter % s2Members.length];
-      s2Counter++;
-    } else if (hasS3) {
-      assignedMember = s3Members[s3Counter % s3Members.length];
-      s3Counter++;
+      const sliceIndex = index;
+      const sliceTotal = s3Limit;
+      if (s3Members.length === 2) {
+        const threshold = Math.round(sliceTotal * 0.70);
+        return sliceIndex < threshold ? s3Members[0] : s3Members[1];
+      }
+      return s3Members[sliceIndex % s3Members.length];
     }
+    if (index < s2Limit && hasS2) {
+      const sliceIndex = index - s3Limit;
+      const sliceTotal = s2Limit - s3Limit;
+      if (s2Members.length === 2) {
+        const threshold = Math.round(sliceTotal * 0.70);
+        return sliceIndex < threshold ? s2Members[0] : s2Members[1];
+      }
+      return s2Members[sliceIndex % s2Members.length];
+    }
+    if (hasS1) {
+      const sliceIndex = index - s2Limit;
+      const sliceTotal = totalFeatures - s2Limit;
+      if (s1Members.length === 2) {
+        const threshold = Math.round(sliceTotal * 0.70);
+        return sliceIndex < threshold ? s1Members[0] : s1Members[1];
+      }
+      return s1Members[sliceIndex % s1Members.length];
+    }
+    if (hasS2) {
+      return s2Members[index % s2Members.length];
+    }
+    if (hasS3) {
+      return s3Members[index % s3Members.length];
+    }
+    return null;
+  };
+
+  featureList.forEach((feat, index) => {
+    const assignedMember = getAssignedDeveloper(index);
     const level = assignedMember ? classifyLevel(assignedMember) : "S1";
     const expYears = assignedMember?.experience_years ?? (level === "S3" ? 12 : level === "S2" ? 8 : 2);
     const multiplier = experienceEffortMultiplier(expYears);
@@ -575,10 +595,14 @@ const initializeFeatureList = (srs, companyRoster) => {
   // Engineering subtotal (dev features only, before testing/deployment rows)
   const engTotal = 723;
 
-  // Testing: priority S2 -> S1 -> S3, round-robin across testing-level members
+  // Testing: priority S2 -> S1 -> S3
   const testingPool = hasS2 ? s2Members : (hasS1 ? s1Members : s3Members);
   let testCounter = 0;
   const pickTester = () => {
+    // If we have exactly 2 developers of the same level, the second one (30% dev) does the testing
+    if (testingPool.length === 2) {
+      return testingPool[1].name;
+    }
     const m = testingPool[testCounter % testingPool.length];
     testCounter++;
     return m?.name || (hasS2 ? "S2" : hasS1 ? "S1" : "S3");
@@ -611,7 +635,14 @@ const initializeFeatureList = (srs, companyRoster) => {
 
   // Deployment: priority S3 -> S2 -> S1
   const deployPool = hasS3 ? s3Members : (hasS2 ? s2Members : s1Members);
-  const deployDev = deployPool[0]?.name || (hasS3 ? "S3" : hasS2 ? "S2" : "S1");
+  const getDeployDev = () => {
+    // If we have exactly 2 developers of the same level, the first one (70% dev) does the deployment
+    if (deployPool.length === 2) {
+      return deployPool[0].name;
+    }
+    return deployPool[0]?.name || (hasS3 ? "S3" : hasS2 ? "S2" : "S1");
+  };
+
   featureList.push({
     id: "__deployment__",
     slNo: slNo++,
@@ -619,7 +650,7 @@ const initializeFeatureList = (srs, companyRoster) => {
     featureName: "Deployment",
     complexity: "Medium",
     baseHours: Math.round(engTotal * 0.10),
-    developer: deployDev,
+    developer: getDeployDev(),
     description: "Deployment and go-live activities",
     hours: Math.round(engTotal * 0.10),
     isDeployment: true,

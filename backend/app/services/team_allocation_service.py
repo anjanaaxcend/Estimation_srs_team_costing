@@ -357,24 +357,35 @@ class TeamAllocationService:
         )
 
         # Deployment (split among all developers in the pre-dep pool)
-        deploy_hours_per_member = round(deployment_hours / len(pre_dep_pool), 2)
-        for r in pre_dep_pool:
+        if len(pre_dep_pool) == 2:
             members_list.append(
                 TeamMemberEstimate(
-                    role=get_display_role(r, "Deployment"),
+                    role=get_display_role(pre_dep_pool[0], "Deployment"),
                     count=1,
                     description="Handles deployment activities (10%).",
                     weekly_hours=40.0,
-                    active_weeks=round(deploy_hours_per_member / 40.0, 2),
-                    hours_per_member=deploy_hours_per_member
+                    active_weeks=round(deployment_hours / 40.0, 2),
+                    hours_per_member=deployment_hours
                 )
             )
+        else:
+            deploy_hours_per_member = round(deployment_hours / len(pre_dep_pool), 2)
+            for r in pre_dep_pool:
+                members_list.append(
+                    TeamMemberEstimate(
+                        role=get_display_role(r, "Deployment"),
+                        count=1,
+                        description="Handles deployment activities (10%).",
+                        weekly_hours=40.0,
+                        active_weeks=round(deploy_hours_per_member / 40.0, 2),
+                        hours_per_member=deploy_hours_per_member
+                    )
+                )
 
         # Testing (split among all developers in the testing pool)
         testing_senior_hours = round(testing_internal_hours + testing_external_hours, 2)
-        test_hours_per_member = round(testing_senior_hours / len(testing_pool), 2)
-        for r in testing_pool:
-            # check if r is S1, S2, or S3 to select correct multiplier
+        if len(testing_pool) == 2:
+            r = testing_pool[1]
             r_role = (r.role or "").lower()
             if any(kw in r_role for kw in ["s3", "lead", "architect"]) or r.experience_years >= 10.0:
                 testing_mult = 1.0
@@ -389,55 +400,118 @@ class TeamAllocationService:
                     count=1,
                     description="Handles internal testing (20%) and client testing (10%).",
                     weekly_hours=40.0,
-                    active_weeks=round((test_hours_per_member / 40.0) * testing_mult, 2),
-                    hours_per_member=test_hours_per_member
+                    active_weeks=round((testing_senior_hours / 40.0) * testing_mult, 2),
+                    hours_per_member=testing_senior_hours
                 )
             )
+        else:
+            test_hours_per_member = round(testing_senior_hours / len(testing_pool), 2)
+            for r in testing_pool:
+                r_role = (r.role or "").lower()
+                if any(kw in r_role for kw in ["s3", "lead", "architect"]) or r.experience_years >= 10.0:
+                    testing_mult = 1.0
+                elif any(kw in r_role for kw in ["s2", "senior"]) or (5.0 <= r.experience_years < 10.0):
+                    testing_mult = 0.75
+                else:
+                    testing_mult = 1.30
+
+                members_list.append(
+                    TeamMemberEstimate(
+                        role=get_display_role(r, "Testing"),
+                        count=1,
+                        description="Handles internal testing (20%) and client testing (10%).",
+                        weekly_hours=40.0,
+                        active_weeks=round((test_hours_per_member / 40.0) * testing_mult, 2),
+                        hours_per_member=test_hours_per_member
+                    )
+                )
 
         # S3 Developer (core development split among all S3s)
         if s3_hours > 0:
-            s3_hours_per_member = round(s3_hours / len(all_s3_res), 2)
-            for r in all_s3_res:
-                members_list.append(
-                    TeamMemberEstimate(
-                        role=get_display_role(r),
-                        count=1,
-                        description="Handles core/architectural development tasks.",
-                        weekly_hours=40.0,
-                        active_weeks=round(s3_hours_per_member / 40.0, 2),
-                        hours_per_member=s3_hours_per_member
+            if len(all_s3_res) == 2:
+                hours_splits = [round(s3_hours * 0.70, 2), round(s3_hours * 0.30, 2)]
+                for idx, r in enumerate(all_s3_res):
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Handles core/architectural development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round(hours_splits[idx] / 40.0, 2),
+                            hours_per_member=hours_splits[idx]
+                        )
                     )
-                )
+            else:
+                s3_hours_per_member = round(s3_hours / len(all_s3_res), 2)
+                for r in all_s3_res:
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Handles core/architectural development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round(s3_hours_per_member / 40.0, 2),
+                            hours_per_member=s3_hours_per_member
+                        )
+                    )
 
         # S2 Developer (core development split among all S2s)
         if mid_hours > 0:
-            mid_hours_per_member = round(mid_hours / len(all_s2_res), 2)
-            for r in all_s2_res:
-                members_list.append(
-                    TeamMemberEstimate(
-                        role=get_display_role(r),
-                        count=1,
-                        description="Handles core module development tasks.",
-                        weekly_hours=40.0,
-                        active_weeks=round((mid_hours_per_member / 40.0) * 0.75, 2),
-                        hours_per_member=mid_hours_per_member
+            if len(all_s2_res) == 2:
+                hours_splits = [round(mid_hours * 0.70, 2), round(mid_hours * 0.30, 2)]
+                for idx, r in enumerate(all_s2_res):
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Handles core module development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round((hours_splits[idx] / 40.0) * 0.75, 2),
+                            hours_per_member=hours_splits[idx]
+                        )
                     )
-                )
+            else:
+                mid_hours_per_member = round(mid_hours / len(all_s2_res), 2)
+                for r in all_s2_res:
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Handles core module development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round((mid_hours_per_member / 40.0) * 0.75, 2),
+                            hours_per_member=mid_hours_per_member
+                        )
+                    )
 
         # S1 Developer (core development split among all S1s)
         if junior_hours > 0:
-            junior_hours_per_member = round(junior_hours / len(all_s1_res), 2)
-            for r in all_s1_res:
-                members_list.append(
-                    TeamMemberEstimate(
-                        role=get_display_role(r),
-                        count=1,
-                        description="Assists with module development tasks.",
-                        weekly_hours=40.0,
-                        active_weeks=round((junior_hours_per_member / 40.0) * 1.30, 2),
-                        hours_per_member=junior_hours_per_member
+            if len(all_s1_res) == 2:
+                hours_splits = [round(junior_hours * 0.70, 2), round(junior_hours * 0.30, 2)]
+                for idx, r in enumerate(all_s1_res):
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Assists with module development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round((hours_splits[idx] / 40.0) * 1.30, 2),
+                            hours_per_member=hours_splits[idx]
+                        )
                     )
-                )
+            else:
+                junior_hours_per_member = round(junior_hours / len(all_s1_res), 2)
+                for r in all_s1_res:
+                    members_list.append(
+                        TeamMemberEstimate(
+                            role=get_display_role(r),
+                            count=1,
+                            description="Assists with module development tasks.",
+                            weekly_hours=40.0,
+                            active_weeks=round((junior_hours_per_member / 40.0) * 1.30, 2),
+                            hours_per_member=junior_hours_per_member
+                        )
+                    )
 
 
         # Project Manager row is removed from team efforts estimation.
