@@ -262,20 +262,23 @@ class TeamAllocationService:
         logic_summary: str = "",
     ) -> TeamStructure:
         # 1. Total dev hours is sum of module estimated hours
+        def round_to_4(v: float) -> float:
+            return float(round(v / 4.0) * 4)
+
         total_dev_hours = sum(max(0.0, float(m.estimated_hours or 0.0)) for m in feature_complexity_analysis)
         if total_dev_hours <= 0:
             total_dev_hours = 160.0
+        else:
+            total_dev_hours = round_to_4(total_dev_hours)
 
         # 2. Testing, deployment, and pre-engineering hours
-        testing_internal_hours = round(total_dev_hours * 0.20, 2)
-        testing_external_hours = round(total_dev_hours * 0.10, 2)
-        deployment_hours = round(total_dev_hours * 0.10, 2)
+        testing_internal_hours = round_to_4(total_dev_hours * 0.20)
+        testing_external_hours = round_to_4(total_dev_hours * 0.10)
+        deployment_hours = round_to_4(total_dev_hours * 0.10)
         pre_engineering_hours = 32.0  # 32 hours minimum
 
         # Total engineering hours (Development + Testing + Deployment)
-        total_engineering_hours = round(total_dev_hours + testing_internal_hours + testing_external_hours + deployment_hours, 2)
-
-        # 3. Project Management hours is not needed in team efforts estimation, only in costing.
+        total_engineering_hours = total_dev_hours + testing_internal_hours + testing_external_hours + deployment_hours
 
         # 4. Developer allocation split based on roster availability
         has_s3 = any(
@@ -301,8 +304,8 @@ class TeamAllocationService:
         else:
             s3_hours = 0.0
             if has_s2 and has_s1:
-                mid_hours = round(total_dev_hours * 0.30, 2)
-                junior_hours = round(total_dev_hours * 0.70, 2)
+                mid_hours = round_to_4(total_dev_hours * 0.30)
+                junior_hours = total_dev_hours - mid_hours
             elif has_s2:
                 mid_hours = total_dev_hours
             else:

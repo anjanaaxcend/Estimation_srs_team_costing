@@ -34,7 +34,11 @@ const sumHours = (rows) => {
   }, 0);
 };
 
-const fmtNum  = (n, dp = 0) => (typeof n === "number" && isFinite(n) ? Math.round(n).toString() : "—");
+const fmtNum  = (n, dp = 0) => {
+  if (typeof n !== "number" || !isFinite(n)) return "—";
+  if (n % 1 === 0) return Math.round(n).toString();
+  return n.toFixed(dp > 0 ? dp : 1).replace(/\.0+$/, '');
+};
 const fmtCost = (n, curr = "USD") => {
   if (typeof n !== "number" || !isFinite(n)) return "—";
   return new Intl.NumberFormat("en-US", {
@@ -367,32 +371,32 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
     const s2TotalHours = s2HoursVal;
     const s1TotalHours = s1HoursVal;
 
-    const preEngDays = Math.ceil(preEngHoursVal / 8);
+    const preEngDays = preEngHoursVal / 8;
     const preEngCost = Math.round(preEngDays * s3Rate);
 
-    const s3DevDays = Math.ceil(s3DevHoursVal / 8);
+    const s3DevDays = s3DevHoursVal / 8;
     const s3DevCost = Math.round(s3DevDays * s3Rate);
 
-    const s2ManDays = Math.ceil(s2TotalHours / 8);
+    const s2ManDays = s2TotalHours / 8;
     const s2Cost = Math.round(s2ManDays * s2Rate);
 
-    const s1ManDays = Math.ceil(s1TotalHours / 8);
+    const s1ManDays = s1TotalHours / 8;
     const s1Cost = Math.round(s1ManDays * s1Rate);
 
     const s3ManDays = preEngDays + s3DevDays;
     const s3Cost = preEngCost + s3DevCost;
 
     const devSubtotal = Math.round(s3Cost + s2Cost + s1Cost);
-    const pmManDays = Math.ceil(pmHours / 8);
+    const pmManDays = pmHours / 8;
     const pmCost = Math.round(devSubtotal * (pmPct / 100));
     const totalCost = Math.round(devSubtotal + pmCost);
 
     const totalAllHours = Math.round(devHours + pmHours);
-    const totalAllDays = Math.round(s3ManDays + s2ManDays + s1ManDays + pmManDays);
+    const totalAllDays = s3ManDays + s2ManDays + s1ManDays + pmManDays;
     const manDaysTotal = totalAllDays;
     const manMonths = Math.round(manDaysTotal / 20);
     const manWeeks = Math.round(manDaysTotal / 5);
-    const inDays = Math.round(s3ManDays + s2ManDays + s1ManDays);
+    const inDays = s3ManDays + s2ManDays + s1ManDays;
 
     const engDays = s3DevDays + s2ManDays + s1ManDays;
     const engCost = s3DevCost + s2Cost + s1Cost;

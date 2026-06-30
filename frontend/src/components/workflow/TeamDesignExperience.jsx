@@ -573,33 +573,51 @@ const initializeFeatureList = (srs, companyRoster) => {
     return null;
   };
 
+  const roundTo4 = (v) => Math.round(v / 4) * 4;
+
   featureList.forEach((feat, index) => {
     const assignedMember = getAssignedDeveloper(index);
     const level = assignedMember ? classifyLevel(assignedMember) : "S1";
     const expYears = assignedMember?.experience_years ?? (level === "S3" ? 12 : level === "S2" ? 8 : 2);
     const multiplier = experienceEffortMultiplier(expYears);
     feat.developer = assignedMember?.name || level;
-    feat.hours = Math.round(feat.baseHours * multiplier);
+    feat.developerCount = 1;
+    feat.hours = roundTo4(feat.baseHours * multiplier);
   });
 
-  // Scale dev features to sum to exactly 723 hours (Option A)
-  const currentDevTotal = featureList.reduce((acc, f) => acc + (f.hours || 0), 0);
+  // Scale dev features to sum to exactly 724 hours (Option A) and ensure they remain multiples of 4
+  let currentDevTotal = featureList.reduce((acc, f) => acc + (f.hours || 0), 0);
   if (currentDevTotal > 0) {
-    const scaleFactor = 723 / currentDevTotal;
+    const scaleFactor = 724 / currentDevTotal;
     featureList.forEach((f) => {
-      f.hours = Math.round(f.hours * scaleFactor);
-      f.baseHours = Math.round(f.baseHours * scaleFactor);
+      f.hours = roundTo4(f.hours * scaleFactor);
+      f.baseHours = roundTo4(f.baseHours * scaleFactor);
     });
+
+    // Adjust to hit exactly 724
+    let newTotal = featureList.reduce((acc, f) => acc + (f.hours || 0), 0);
+    let safetyVal = 0;
+    while (newTotal !== 724 && safetyVal < 100) {
+      safetyVal++;
+      const diff = 724 - newTotal;
+      const step = diff > 0 ? 4 : -4;
+      for (let i = 0; i < featureList.length; i++) {
+        if (newTotal === 724) break;
+        if (step < 0 && featureList[i].hours <= 4) continue;
+        featureList[i].hours += step;
+        featureList[i].baseHours += step;
+        newTotal += step;
+      }
+    }
   }
 
   // Engineering subtotal (dev features only, before testing/deployment rows)
-  const engTotal = 723;
+  const engTotal = 724;
 
   // Testing: priority S2 -> S1 -> S3
   const testingPool = hasS2 ? s2Members : (hasS1 ? s1Members : s3Members);
   let testCounter = 0;
   const pickTester = () => {
-    // If we have exactly 2 developers of the same level, the second one (30% dev) does the testing
     if (testingPool.length === 2) {
       return testingPool[1].name;
     }
@@ -608,51 +626,57 @@ const initializeFeatureList = (srs, companyRoster) => {
     return m?.name || (hasS2 ? "S2" : hasS1 ? "S1" : "S3");
   };
 
+  const internalTestingHours = roundTo4(engTotal * 0.20);
   featureList.push({
     id: "__internal_testing__",
     slNo: slNo++,
     moduleName: "Testing",
     featureName: "Internal Testing",
     complexity: "Medium",
-    baseHours: Math.round(engTotal * 0.20),
+    baseHours: internalTestingHours,
     developer: pickTester(),
+    developerCount: 1,
     description: "Internal testing (20% of development)",
-    hours: Math.round(engTotal * 0.20),
+    hours: internalTestingHours,
     isTesting: true,
   });
+
+  const clientTestingHours = roundTo4(engTotal * 0.10);
   featureList.push({
     id: "__client_testing__",
     slNo: slNo++,
     moduleName: "Testing",
     featureName: "Client Testing",
     complexity: "Medium",
-    baseHours: Math.round(engTotal * 0.10),
+    baseHours: clientTestingHours,
     developer: pickTester(),
+    developerCount: 1,
     description: "Client testing and UAT support (10% of development)",
-    hours: Math.round(engTotal * 0.10),
+    hours: clientTestingHours,
     isTesting: true,
   });
 
   // Deployment: priority S3 -> S2 -> S1
   const deployPool = hasS3 ? s3Members : (hasS2 ? s2Members : s1Members);
   const getDeployDev = () => {
-    // If we have exactly 2 developers of the same level, the first one (70% dev) does the deployment
     if (deployPool.length === 2) {
       return deployPool[0].name;
     }
     return deployPool[0]?.name || (hasS3 ? "S3" : hasS2 ? "S2" : "S1");
   };
 
+  const deploymentHours = roundTo4(engTotal * 0.10);
   featureList.push({
     id: "__deployment__",
     slNo: slNo++,
     moduleName: "Deployment",
     featureName: "Deployment",
     complexity: "Medium",
-    baseHours: Math.round(engTotal * 0.10),
+    baseHours: deploymentHours,
     developer: getDeployDev(),
+    developerCount: 1,
     description: "Deployment and go-live activities",
-    hours: Math.round(engTotal * 0.10),
+    hours: deploymentHours,
     isDeployment: true,
   });
 
@@ -825,6 +849,49 @@ export function TeamDesignExperience() {
     }
     return calculateHourlyPay(resource?.experience_years ?? 5);
   };
+
+  // AI-driven Team Composition Recommendation based on SRS module/feature complexity
+  const aiRosterSuggestion = useMemo(() => {
+    if (!srsData || !srsData.structuredRequirements) return null;
+    const features = srsData.structuredRequirements.features || [];
+    const modules = srsData.structuredRequirements.modules || [];
+    if (features.length === 0 && modules.length === 0) return null;
+
+    let hasHigh = false;
+    let hasMedium = false;
+
+    features.forEach((f) => {
+      const comp = (f.complexity || "").toLowerCase();
+      if (comp.includes("high")) hasHigh = true;
+      if (comp.includes("medium")) hasMedium = true;
+    });
+
+    modules.forEach((m) => {
+      const comp = (m.complexity || "").toLowerCase();
+      if (comp.includes("high")) hasHigh = true;
+      if (comp.includes("medium")) hasMedium = true;
+    });
+
+    let projectComplexity = "Low";
+    let recommendedLevels = ["S1"];
+    let rationale = "This is a simple project with only low-complexity tasks. S1 developers are sufficient to handle the entire scope.";
+
+    if (hasHigh) {
+      projectComplexity = "High";
+      recommendedLevels = ["S3", "S2", "S1"];
+      rationale = "This project contains high-complexity modules/features (e.g., complex architecture, integrations, or security requirements). We strongly recommend including S3 (Lead/Architect), S2 (Senior), and S1 (Junior) developers to ensure proper senior oversight and delivery quality.";
+    } else if (hasMedium) {
+      projectComplexity = "Medium";
+      recommendedLevels = ["S2", "S1"];
+      rationale = "This is a medium-complexity project. It requires S2 (Senior/Mid-level) developers to drive the implementation and S1 (Junior) developers to assist. S3 (Lead/Architect) developer is not required for development, keeping the team structure lean.";
+    }
+
+    return {
+      complexity: projectComplexity,
+      levels: recommendedLevels,
+      rationale: rationale,
+    };
+  }, [srsData]);
 
   // Compute missing developer levels (S1, S2, S3)
   const missingDevLevels = useMemo(() => {
@@ -1021,10 +1088,26 @@ export function TeamDesignExperience() {
         if (item.id === featureId) {
           const lvl = getMemberLevel(newDev);
           const multiplier = lvl === "S3" ? 0.75 : lvl === "S2" ? 1.0 : 1.30;
+          const rawHours = item.baseHours * multiplier;
           return {
             ...item,
             developer: newDev,
-            hours: Math.round(item.baseHours * multiplier)
+            hours: Math.round(rawHours / 4) * 4
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleFeatureDevCountChange = (featureId, newCount) => {
+    setUserHasModified(true);
+    setFeatureAllocations((prev) =>
+      prev.map((item) => {
+        if (item.id === featureId) {
+          return {
+            ...item,
+            developerCount: Math.max(1, newCount)
           };
         }
         return item;
@@ -1529,20 +1612,43 @@ export function TeamDesignExperience() {
           }
         }
         return m;
-      });
-    } else {
+     } else {
       let leadDevHours = 0;
       let midHours = 0;
       let juniorHours = 0;
 
+      // Find unique S1, S2, S3 developers assigned to dev features and their max developer counts
+      const s3Devs = new Set();
+      const s2Devs = new Set();
+      const s1Devs = new Set();
+      let maxS3FeatCount = 1;
+      let maxS2FeatCount = 1;
+      let maxS1FeatCount = 1;
+
       if (resolvedFeatureAllocations.length > 0) {
         resolvedFeatureAllocations.forEach((f) => {
+          if (f.isTesting || f.isDeployment) return;
           const lvl = getMemberLevel(f.developer);
-          if (lvl === "S3") leadDevHours += f.hours;
-          else if (lvl === "S2") midHours += f.hours;
-          else juniorHours += f.hours;
+          const fCount = Number(f.developerCount) || 1;
+          if (lvl === "S3") {
+            leadDevHours += f.hours;
+            s3Devs.add(f.developer);
+            if (fCount > maxS3FeatCount) maxS3FeatCount = fCount;
+          } else if (lvl === "S2") {
+            midHours += f.hours;
+            s2Devs.add(f.developer);
+            if (fCount > maxS2FeatCount) maxS2FeatCount = fCount;
+          } else {
+            juniorHours += f.hours;
+            s1Devs.add(f.developer);
+            if (fCount > maxS1FeatCount) maxS1FeatCount = fCount;
+          }
         });
       }
+
+      const s3Count = Math.max(s3Devs.size, maxS3FeatCount) || 1;
+      const s2Count = Math.max(s2Devs.size, maxS2FeatCount) || 1;
+      const s1Count = Math.max(s1Devs.size, maxS1FeatCount) || 1;
 
       // Roster matching
       const findRosterResource = (keywords, minExp = 0, maxExp = 100, fallbackRole = "Developer", fallbackExp = 5) => {
@@ -1571,7 +1677,6 @@ export function TeamDesignExperience() {
 
       const preEngineeringTotal = reqColHours + queryPrepHours + weeklyIntHours + kbRefHours;
       const engineeringTotal = leadDevHours + midHours + juniorHours;
-      const pmTotalHours = (preEngineeringTotal + engineeringTotal) * (pmFactor / 100);
 
       allMembers.push({
         role: "Requirements Collection (Pre-Engineering)",
@@ -1614,7 +1719,6 @@ export function TeamDesignExperience() {
       });
 
       // Build one row per actual roster member, grouped by their level bucket
-      // Only add rows for levels that have hours AND a matching roster member
       const rosterByLevel = { S1: null, S2: null, S3: null };
       companyRoster.forEach(r => {
         const rLower = (r.role || "").toLowerCase();
@@ -1627,21 +1731,21 @@ export function TeamDesignExperience() {
         }
       });
 
-      // If roster is empty, fall back to generic labels with standard rates
-      const hasAnyRoster = companyRoster.length > 0;
+      const roundTo4 = (v) => Math.round(v / 4) * 4;
 
       if (juniorHours > 0) {
         const member = rosterByLevel.S1;
         const label = member ? `${member.name} (${member.role})` : "S1 Developer";
         const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resJunior);
         const expYears = member ? (member.experience_years || 2) : 2;
+        const hoursPerMember = roundTo4(juniorHours / s1Count);
         allMembers.push({
           role: label,
-          count: 1,
+          count: s1Count,
           description: `Junior/S1 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
           weekly_hours: 40,
-          active_weeks: Math.round(juniorHours / 40),
-          hours_per_member: juniorHours,
+          active_weeks: Math.round(hoursPerMember / 40) || 1,
+          hours_per_member: hoursPerMember,
           hourly_rate: rate,
         });
       }
@@ -1651,13 +1755,14 @@ export function TeamDesignExperience() {
         const label = member ? `${member.name} (${member.role})` : "S2 Developer";
         const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resMid);
         const expYears = member ? (member.experience_years || 8) : 8;
+        const hoursPerMember = roundTo4(midHours / s2Count);
         allMembers.push({
           role: label,
-          count: 1,
+          count: s2Count,
           description: `Mid/S2 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
           weekly_hours: 40,
-          active_weeks: Math.round(midHours / 40),
-          hours_per_member: midHours,
+          active_weeks: Math.round(hoursPerMember / 40) || 1,
+          hours_per_member: hoursPerMember,
           hourly_rate: rate,
         });
       }
@@ -1667,17 +1772,17 @@ export function TeamDesignExperience() {
         const label = member ? `${member.name} (${member.role})` : "S3 Developer";
         const rate = member ? getRosterResourceRate(member) : getRosterResourceRate(resSenior);
         const expYears = member ? (member.experience_years || 12) : 12;
+        const hoursPerMember = roundTo4(leadDevHours / s3Count);
         allMembers.push({
           role: label,
-          count: 1,
+          count: s3Count,
           description: `Lead/S3 developer engineering effort${member ? ` — ${expYears} yrs exp` : ""}.`,
           weekly_hours: 40,
-          active_weeks: Math.round(leadDevHours / 40),
-          hours_per_member: leadDevHours,
+          active_weeks: Math.round(hoursPerMember / 40) || 1,
+          hours_per_member: hoursPerMember,
           hourly_rate: rate,
         });
       }
-
     }
 
     const totalSize = allMembers.reduce((s, m) => s + (m.role.includes("Contingency") || m.role.includes("Buffer") ? 0 : (Number(m.count) || 0)), 0);
@@ -2026,6 +2131,24 @@ export function TeamDesignExperience() {
 
 
 
+                      {aiRosterSuggestion && (
+                        <div className="bg-parcelles-sage/10 border border-parcelles-dark/25 p-4 font-body text-xs leading-relaxed text-parcelles-dark space-y-2 rounded animate-fade-in" style={{ borderLeft: "4px solid #8EC4A0" }}>
+                          <div className="flex items-center gap-2 font-display uppercase tracking-wider font-bold text-[10px] text-parcelles-dark">
+                            <Sparkles size={14} className="text-parcelles-sage" />
+                            <span>AI Team Composition Recommendation</span>
+                          </div>
+                          <div className="flex gap-4 items-center mt-1">
+                            <div className="bg-parcelles-dark text-parcelles-bg px-2.5 py-1 text-[9px] font-display uppercase font-bold tracking-widest rounded-sm">
+                              Complexity: {aiRosterSuggestion.complexity}
+                            </div>
+                            <div className="bg-parcelles-sage/20 text-parcelles-dark border border-parcelles-dark/15 px-2.5 py-1 text-[9px] font-display uppercase font-bold tracking-widest rounded-sm">
+                              Required Levels: {aiRosterSuggestion.levels.join(", ")}
+                            </div>
+                          </div>
+                          <p className="text-parcelles-dark/80 text-[11px] mt-2">{aiRosterSuggestion.rationale}</p>
+                        </div>
+                      )}
+
                       {/* Caution block if S1, S2, or S3 developer missing */}
                       {missingDevLevels.length > 0 && (
                         <div className="bg-yellow-500/10 border border-yellow-500/35 text-yellow-800 text-xs p-3 font-body flex items-start gap-2.5 animate-fade-in" style={{ clipPath: "polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%)" }}>
@@ -2289,12 +2412,13 @@ export function TeamDesignExperience() {
                                       min="32"
                                       value={preEngHours[key] ?? 32}
                                       onChange={(e) => {
-                                        const val = Math.max(32, parseInt(e.target.value) || 32);
+                                        const inputVal = parseInt(e.target.value) || 32;
+                                        const val = Math.max(32, Math.round(inputVal / 4) * 4);
                                         setPreEngHours(prev => ({ ...prev, [key]: val }));
                                       }}
                                       className="w-full border border-parcelles-dark/30 px-2 py-1 text-center bg-parcelles-bg focus:border-parcelles-dark outline-none font-mono text-xs rounded"
                                     />
-                                    <span className="opacity-60 text-[10px] uppercase tracking-wider text-parcelles-dark whitespace-nowrap">hrs / {Math.ceil((preEngHours[key] ?? 32) / 8)} days</span>
+                                    <span className="opacity-60 text-[10px] uppercase tracking-wider text-parcelles-dark whitespace-nowrap">hrs / {((preEngHours[key] ?? 32) / 8).toFixed(1).replace(/\.0$/, '')} days</span>
                                   </div>
                                 </div>
                               ))}
@@ -2302,7 +2426,7 @@ export function TeamDesignExperience() {
                           )}
                           <div className="text-right pt-2 border-t border-parcelles-dark/10">
                             <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Pre-Engineering Effort: </span>
-                            <span className="font-mono text-xs font-bold text-parcelles-dark">{preEngTotal} hrs / {Math.ceil(preEngTotal / 8)} days</span>
+                            <span className="font-mono text-xs font-bold text-parcelles-dark">{preEngTotal} hrs / {(preEngTotal / 8).toFixed(1).replace(/\.0$/, '')} days</span>
                           </div>
                         </div>
 
@@ -2333,6 +2457,7 @@ export function TeamDesignExperience() {
                                           <th className="p-2 border-r border-parcelles-light/10 text-left w-[180px]">Features</th>
                                           <th className="p-2 border-r border-parcelles-light/10 text-left">Description</th>
                                           <th className="p-2 border-r border-parcelles-light/10 text-left w-[100px]">Developer</th>
+                                          <th className="p-2 border-r border-parcelles-light/10 text-center w-[70px]">Dev Count</th>
                                           <th className="p-2 border-r border-parcelles-light/10 text-right w-[90px]">Est. Hours</th>
                                           <th className="p-2 text-right w-[70px]">Days</th>
                                         </tr>
@@ -2340,7 +2465,6 @@ export function TeamDesignExperience() {
                                       <tbody className="divide-y divide-parcelles-dark/10">
                                         {(() => {
                                           const rowSpans = calculateModuleRowSpans(resolvedFeatureAllocations);
-                                          // Build module groups for subtotal rows
                                           const moduleGroups = {};
                                           resolvedFeatureAllocations.forEach((row) => {
                                             if (!moduleGroups[row.moduleName]) moduleGroups[row.moduleName] = [];
@@ -2352,6 +2476,10 @@ export function TeamDesignExperience() {
                                             const spanInfo = rowSpans.find((s) => s.index === idx);
                                             const isDeployRow = row.isDeployment === true;
                                             const isTestingRow = row.isTesting === true;
+                                            const devCount = isDeployRow || isTestingRow ? 1 : (row.developerCount || 1);
+                                            const elapsedDays = row.hours / (8 * devCount);
+                                            const daysDisplay = elapsedDays.toFixed(2).replace(/\.00$/, '').replace(/(\.[1-9])0$/, '$1') + 'd';
+
                                             rows.push(
                                               <tr key={row.id} className={`hover:bg-parcelles-sage/5 transition-colors font-body text-xs text-parcelles-dark ${isDeployRow || isTestingRow ? "bg-parcelles-dark/5" : "bg-parcelles-bg"}`}>
                                                 <td className="p-2 border-r border-parcelles-dark/10 text-center align-middle font-mono text-[10px]">
@@ -2390,11 +2518,25 @@ export function TeamDesignExperience() {
                                                       )}
                                                     </select>
                                                 </td>
+                                                <td className="p-2 border-r border-parcelles-dark/10 align-middle text-center">
+                                                  {isDeployRow || isTestingRow ? (
+                                                    <span className="font-mono text-xs text-parcelles-dark/40">1</span>
+                                                  ) : (
+                                                    <input
+                                                      type="number"
+                                                      min="1"
+                                                      max="10"
+                                                      value={row.developerCount || 1}
+                                                      onChange={(e) => handleFeatureDevCountChange(row.id, parseInt(e.target.value) || 1)}
+                                                      className="w-12 text-center border border-parcelles-dark/25 rounded px-1 py-0.5 bg-parcelles-bg text-parcelles-dark font-mono text-xs focus:border-parcelles-dark outline-none"
+                                                    />
+                                                  )}
+                                                </td>
                                                 <td className="p-2 border-r border-parcelles-dark/10 text-right align-middle font-mono font-bold">
                                                   {Math.round(row.hours)}
                                                 </td>
                                                 <td className="p-2 text-right align-middle font-mono text-[10px] text-parcelles-dark/60">
-                                                  {Math.ceil(row.hours / 8)}d
+                                                  {daysDisplay}
                                                 </td>
                                               </tr>
                                             );
@@ -2410,7 +2552,7 @@ export function TeamDesignExperience() {
                           )}
                           <div className="flex items-center justify-between pt-2 border-t border-parcelles-dark/10">
                             <span className="font-display text-[10px] uppercase tracking-widest text-parcelles-dark/60 font-bold">Total Engineering Effort:</span>
-                            <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(engineeringTotal)} hrs / {Math.ceil(engineeringTotal / 8)} days</span>
+                            <span className="font-mono text-xs font-bold text-parcelles-dark">{Math.round(engineeringTotal)} hrs / {(engineeringTotal / 8).toFixed(1).replace(/\.0$/, '')} days</span>
                           </div>
                         </div>
 
@@ -2418,7 +2560,7 @@ export function TeamDesignExperience() {
                         {/* Grand Total Box */}
                         <div className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg p-4 flex justify-between items-center rounded shadow-sm">
                           <span className="font-display text-sm uppercase tracking-wider font-bold">Grand Total of Project Team Allocation Efforts Estimation</span>
-                          <span className="font-mono text-xl font-bold">{Math.round(grandTotal)} hrs / {Math.ceil(grandTotal / 8)} days</span>
+                          <span className="font-mono text-xl font-bold">{Math.round(grandTotal)} hrs / {(grandTotal / 8).toFixed(1).replace(/\.0$/, '')} days</span>
                         </div>
 
                         {/* Last Box: Developer Effort Summary and Action */}
@@ -2430,7 +2572,7 @@ export function TeamDesignExperience() {
                                <div key={label} className="p-3 border border-parcelles-dark/10 bg-parcelles-bg text-center rounded">
                                  <span className="font-display text-[9px] uppercase tracking-widest text-parcelles-dark/65 font-bold block">{label}</span>
                                  <p className="text-xl font-display font-extrabold text-parcelles-dark mt-1.5">{hrs} h</p>
-                                 <span className="text-[9px] font-body opacity-50 block mt-0.5">({Math.ceil(hrs / 8)} days)</span>
+                                 <span className="text-[9px] font-body opacity-50 block mt-0.5">({(hrs / 8).toFixed(1).replace(/\.0$/, '')} days)</span>
                                </div>
                              )) : (
                                <div className="p-3 border border-parcelles-dark/10 bg-parcelles-bg text-center rounded col-span-3">
