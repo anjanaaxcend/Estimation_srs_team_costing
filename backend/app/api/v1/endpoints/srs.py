@@ -71,7 +71,13 @@ def save_uploaded_document(
     if not h:
         return ""
     
-    existing = db.query(UploadedDocument).filter(UploadedDocument.hash == h).first()
+    query = db.query(UploadedDocument).filter(UploadedDocument.hash == h)
+    if user:
+        query = query.filter(UploadedDocument.user_id == user.id)
+    else:
+        query = query.filter(UploadedDocument.session_id == session_id)
+        
+    existing = query.first()
     if not existing:
         new_doc = UploadedDocument(
             user_id=user.id if user else None,
@@ -135,7 +141,13 @@ def get_existing_srs_for_hash(
     session_id: str | None,
 ) -> SRSGenerationResult | None:
     # 1. Search in ApprovedSRS
-    approved = db.query(ApprovedSRS).filter(ApprovedSRS.document_hash == h).order_by(ApprovedSRS.created_at.desc()).first()
+    query_approved = db.query(ApprovedSRS).filter(ApprovedSRS.document_hash == h)
+    if user:
+        query_approved = query_approved.filter(ApprovedSRS.user_id == user.id)
+    else:
+        query_approved = query_approved.filter(ApprovedSRS.session_id == session_id)
+    approved = query_approved.order_by(ApprovedSRS.created_at.desc()).first()
+    
     if approved:
         try:
             srs_data = json.loads(approved.content)
@@ -161,7 +173,13 @@ def get_existing_srs_for_hash(
             print(f"Error loading approved SRS: {e}")
 
     # 2. Search in TemporarySRS
-    temp = db.query(TemporarySRS).filter(TemporarySRS.document_hash == h).order_by(TemporarySRS.updated_at.desc()).first()
+    query_temp = db.query(TemporarySRS).filter(TemporarySRS.document_hash == h)
+    if user:
+        query_temp = query_temp.filter(TemporarySRS.user_id == user.id)
+    else:
+        query_temp = query_temp.filter(TemporarySRS.session_id == session_id)
+    temp = query_temp.order_by(TemporarySRS.updated_at.desc()).first()
+    
     if temp:
         try:
             srs_data = json.loads(temp.content)
