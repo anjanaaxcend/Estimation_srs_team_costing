@@ -2603,7 +2603,7 @@ export function TeamDesignExperience() {
                             const roundedDays = Math.max(0.5, Math.round(elapsedDays * 2) / 2);
                             return sum + roundedDays;
                           }, 0);
-                          const grandTotalDays = totalEngineeringDays + (preEngineeringHours / 8);
+                          const grandTotalDays = totalEngineeringDays + (preEngTotal / 8);
                           return (
                             <div className="border border-parcelles-dark bg-parcelles-dark text-parcelles-bg p-4 flex justify-between items-center rounded shadow-sm">
                               <span className="font-display text-sm uppercase tracking-wider font-bold">Grand Total of Project Team Allocation Efforts Estimation</span>
