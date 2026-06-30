@@ -18,7 +18,7 @@ const NAV_LINKS = [
 export function StudioShell({ children }) {
   const pathname = usePathname();
 
-  const { user, logout } = useAuth();
+  const { user, logout, loading } = useAuth();
   const router = useRouter();
 
   // Navigation tracking
@@ -307,7 +307,9 @@ export function StudioShell({ children }) {
           >
             {/* Auth button — hidden on auth/home pages which have their own nav */}
             {!isAuthPage && !isHomePage && (
-              user ? (
+              loading ? (
+                <div style={{ width: "80px", height: "30px" }} />
+              ) : user ? (
                 <>
                   {pathname !== "/history" && (
                     <Link
