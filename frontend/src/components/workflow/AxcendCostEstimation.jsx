@@ -388,6 +388,8 @@ export function AxcendCostEstimation({ analysisResult, currency = "USD", onCurre
     const testingHours = Math.min(s2HoursVal, 216); // 216 hrs is testing
     const pureS2Dev = s2HoursVal - testingHours;
 
+    const pureS1Dev = s1HoursVal;
+
     // Displayed hours per developer (reduced by dev count!)
     const s3HoursPerDev = Math.round((pureS3Dev / s3Count) + preEngHoursVal + deploymentHours);
     const s2HoursPerDev = Math.round((pureS2Dev / s2Count) + testingHours);
