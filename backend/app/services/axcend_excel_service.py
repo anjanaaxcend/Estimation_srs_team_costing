@@ -189,15 +189,17 @@ class AxcendExcelService:
         ws["E3"] = "=C13"
         _apply(ws["E3"], font=_font(bold=True), align=_align("center"), border=border)
 
-        # Count unique actual developers in features list to display dynamic number of engineers
-        unique_devs = set()
-        for module in req.modules:
-            for feature in module.features:
-                if feature.developer:
-                    dev_name = feature.developer.split("(")[0].strip()
-                    if dev_name.upper() not in {"S1", "S2", "S3", "DEVELOPER", "TESTER"}:
-                        unique_devs.add(dev_name)
-        num_engineers = len(unique_devs) if unique_devs else 3
+        # Count unique actual developers in cost_rows to display dynamic number of engineers
+        num_engineers = sum(row.count for row in req.cost_rows if not row.is_pm)
+        if num_engineers <= 0:
+            unique_devs = set()
+            for module in req.modules:
+                for feature in module.features:
+                    if feature.developer:
+                        dev_name = feature.developer.split("(")[0].strip()
+                        if dev_name.upper() not in {"S1", "S2", "S3", "DEVELOPER", "TESTER"}:
+                            unique_devs.add(dev_name)
+            num_engineers = len(unique_devs) if unique_devs else 3
 
         headers_top = ["Man Days", "Man Months", "Man Weeks", f"{num_engineers} Engineers", "Weeks/Eng"]
         for col, header in enumerate(headers_top, start=1):

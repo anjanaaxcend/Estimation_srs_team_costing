@@ -216,6 +216,10 @@ export const getApprovedSRS = async () => {
   return apiFetch("/srs/approved");
 };
 
+export const restoreApprovedSRS = async (approvedId) => {
+  return apiFetch(`/srs/approved/${approvedId}/restore`, { method: "POST" });
+};
+
 export const analyzeTeam = async (file, selectedEngine, companyRoster, planningPreferences) => {
   const formData = new FormData();
   formData.append("file", file);

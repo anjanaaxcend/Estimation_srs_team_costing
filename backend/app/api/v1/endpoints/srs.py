@@ -912,6 +912,30 @@ def get_approved_srs_list(
     ]
 
 
+@router.post("/approved/{approved_id}/restore")
+def restore_approved_srs(
+    approved_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    approved = db.query(ApprovedSRS).filter(ApprovedSRS.id == approved_id, ApprovedSRS.user_id == current_user.id).first()
+    if not approved:
+        raise HTTPException(status_code=404, detail="Approved SRS not found")
+        
+    save_temp_draft_full(
+        db=db,
+        user=current_user,
+        session_id=None,
+        project_name=approved.project_name,
+        content=approved.content,
+        team_content=approved.team_content,
+        cost_content=approved.cost_content,
+        axcend_estimation_content=approved.axcend_estimation_content,
+        document_hash=approved.document_hash,
+    )
+    return {"status": "restored"}
+
+
 def _save_to_training(raw_input: str, extracted: dict, feedback: str = "") -> None:
     """Append a training example to the requirements_training_data.json file."""
     try:

@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 
-import { runSrsPipeline, getTempDraft, normalizeSrs, getApprovedSRS } from "@/lib/platformApi";
+import { runSrsPipeline, getTempDraft, normalizeSrs, getApprovedSRS, restoreApprovedSRS } from "@/lib/platformApi";
 import { clearCostDraft } from "@/lib/costEstimationStorage";
 import { clearApprovedTeam } from "@/lib/workflowArtifacts";
 import { useAuth } from "@/context/AuthContext";
@@ -223,18 +223,62 @@ export function WorkflowProvider({ children }) {
     setHistory((prev) => prev.slice(0, -1));
   };
 
-  const loadApprovedSrs = (approvedData) => {
+  const loadApprovedSrs = async (approvedData) => {
+    try {
+      await restoreApprovedSRS(approvedData.id);
+    } catch (e) {
+      console.error("Failed to restore blueprint in backend:", e);
+    }
+
     const srs = approvedData.content;
     const normalized = normalizeSrs(srs);
     setSrsData(normalized);
     setProjectTitle(approvedData.project_name || srs.title || "Project Blueprint");
-    if (srs.cleaned_text) {
-      setCleanedInput(srs.cleaned_text);
-      setRawInput(srs.cleaned_text);
-    } else if (normalized.cleanedText) {
-      setCleanedInput(normalized.cleanedText);
-      setRawInput(normalized.cleanedText);
+    
+    const inputVal = srs.cleaned_text || normalized.cleanedText || "";
+    setCleanedInput(inputVal);
+    setRawInput(inputVal);
+
+    // Save to localStorage so frontend pages can load it immediately
+    try {
+      const workflowPayload = {
+        projectTitle: approvedData.project_name || srs.title || "Project Blueprint",
+        source: "text",
+        rawInput: inputVal,
+        cleanedInput: inputVal,
+        selectedEngine: srs.selected_model?.provider || "openai",
+        srsData: normalized
+      };
+      window.localStorage.setItem(storageKey, JSON.stringify(workflowPayload));
+
+      if (approvedData.team_content) {
+        window.localStorage.setItem("ai-project-planner-team-draft-v1", approvedData.team_content);
+        try {
+          const teamDraft = JSON.parse(approvedData.team_content);
+          if (teamDraft.teamData) {
+            window.localStorage.setItem("nexaforge-approved-team-v1", JSON.stringify(teamDraft.teamData));
+          }
+        } catch (err) {}
+      } else {
+        window.localStorage.removeItem("ai-project-planner-team-draft-v1");
+        window.localStorage.removeItem("nexaforge-approved-team-v1");
+      }
+
+      if (approvedData.cost_content) {
+        window.localStorage.setItem("ai-project-planner-cost-estimation-v1", approvedData.cost_content);
+      } else {
+        window.localStorage.removeItem("ai-project-planner-cost-estimation-v1");
+      }
+
+      if (approvedData.axcend_estimation_content) {
+        window.localStorage.setItem("axcend-effort-estimation-v1", approvedData.axcend_estimation_content);
+      } else {
+        window.localStorage.removeItem("axcend-effort-estimation-v1");
+      }
+    } catch (e) {
+      console.error("Failed to write restored blueprint to localStorage:", e);
     }
+
     router.push("/srs");
   };
 
